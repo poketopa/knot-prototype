@@ -18,15 +18,17 @@ const isPublicDomain = (value) => {
   }
 }
 
-const checkEnvironment = ({ api, caddy, errors }) => {
+const checkEnvironment = ({ api, expectedDomain, errors }) => {
   const env = api.environment ?? {}
-  const domain = caddy.environment?.KNOT_API_DOMAIN
-  if (!isPublicDomain(domain)) errors.push('실제 API 도메인을 지정해야 합니다.')
+  if (!isPublicDomain(expectedDomain)) errors.push('실제 API 도메인을 지정해야 합니다.')
   if (env.APP_ENV !== 'production' || env.STORAGE_DRIVER !== 's3') {
     errors.push('운영 환경은 APP_ENV=production, STORAGE_DRIVER=s3여야 합니다.')
   }
-  if (String(env.S3_PRIVATE_PREFIX_CONFIRMED) !== 'true') {
-    errors.push('S3 비공개 경로의 관리자 확인과 접근 검증이 아직 필요합니다.')
+  if (
+    String(env.S3_PRIVATE_PREFIX_CONFIRMED) !== 'true' &&
+    String(env.S3_PUBLIC_READ_ACKNOWLEDGED) !== 'true'
+  ) {
+    errors.push('S3 비공개 확인 또는 공개 읽기 승인 중 하나가 필요합니다.')
   }
   if (!/^knot\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/.test(env.S3_PREFIX ?? '')) {
     errors.push('S3_PREFIX는 Knot 전용 하위 경로여야 합니다.')
@@ -34,7 +36,7 @@ const checkEnvironment = ({ api, caddy, errors }) => {
   for (const key of ['GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET', 'AWS_REGION', 'S3_BUCKET']) {
     if (isPlaceholder(env[key])) errors.push(`${key}의 실제 설정이 필요합니다.`)
   }
-  if (env.OAUTH_CALLBACK_URL !== `https://${domain}/v1/auth/github/callback`) {
+  if (env.OAUTH_CALLBACK_URL !== `https://${expectedDomain}/v1/auth/github/callback`) {
     errors.push('OAuth callback이 API 도메인의 HTTPS callback과 일치해야 합니다.')
   }
   if (env.MIGRATION_DATABASE_URL || env.POSTGRES_PASSWORD || env.API_RUNTIME_DB_PASSWORD) {
@@ -70,7 +72,7 @@ const checkDatabase = ({ api, migrate, postgres, errors }) => {
   }
 }
 
-const checkNetwork = ({ services, caddy, errors }) => {
+const checkCaddyNetwork = ({ services, caddy, errors }) => {
   for (const [name, service] of Object.entries(services)) {
     if (service.network_mode === 'host') errors.push('호스트 네트워크 모드는 허용하지 않습니다.')
     if (name !== 'caddy' && service.ports?.length)
@@ -89,13 +91,64 @@ const checkNetwork = ({ services, caddy, errors }) => {
     errors.push('프록시는 TCP 80과 443만 공개해야 합니다.')
 }
 
+const checkHostProxyNetwork = ({ services, api, errors }) => {
+  for (const [name, service] of Object.entries(services)) {
+    if (service.network_mode === 'host') errors.push('호스트 네트워크 모드는 허용하지 않습니다.')
+    if (name !== 'api' && service.ports?.length)
+      errors.push('호스트 프록시 모드에서는 API loopback 포트 외 공개 포트를 허용하지 않습니다.')
+  }
+  const ports = api.ports ?? []
+  const allowed =
+    ports.length === 1 &&
+    ports[0].host_ip === '127.0.0.1' &&
+    Number(ports[0].target) === 4310 &&
+    Number(ports[0].published) === 4310 &&
+    ports[0].protocol === 'tcp'
+  if (!allowed) {
+    errors.push('호스트 프록시 모드는 API를 127.0.0.1:4310에만 공개해야 합니다.')
+  }
+}
+
+const parseBytes = (value) => {
+  if (value === undefined || value === null) return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+const checkHostProxyLimits = ({ api, migrate, postgres, errors }) => {
+  const expected = [
+    ['PostgreSQL', postgres.mem_limit, 256 * 1024 * 1024],
+    ['API', api.mem_limit, 384 * 1024 * 1024],
+    ['마이그레이션', migrate.mem_limit, 384 * 1024 * 1024]
+  ]
+  for (const [name, actual, limit] of expected) {
+    const parsed = parseBytes(actual)
+    if (!parsed || parsed > limit)
+      errors.push(`${name} 메모리 제한을 2GiB EC2에 맞게 확인해야 합니다.`)
+  }
+}
+
+const callbackDomain = (api) => {
+  try {
+    return new URL(api.environment?.OAUTH_CALLBACK_URL).hostname
+  } catch {
+    return null
+  }
+}
+
 export const validateDeploymentConfig = (config) => {
   const errors = []
   const { api, migrate, postgres, caddy } = config.services ?? {}
-  if (!api || !migrate || !postgres || !caddy) return ['필수 Compose 서비스가 없습니다.']
-  checkEnvironment({ api, caddy, errors })
+  if (!api || !migrate || !postgres) return ['필수 Compose 서비스가 없습니다.']
+  const expectedDomain = caddy?.environment?.KNOT_API_DOMAIN ?? callbackDomain(api)
+  checkEnvironment({ api, expectedDomain, errors })
   checkDatabase({ api, migrate, postgres, errors })
-  checkNetwork({ services: config.services, caddy, errors })
+  if (caddy) {
+    checkCaddyNetwork({ services: config.services, caddy, errors })
+  } else {
+    checkHostProxyNetwork({ services: config.services, api, errors })
+    checkHostProxyLimits({ api, migrate, postgres, errors })
+  }
   if (
     isPlaceholder(api.image) ||
     /:latest$/.test(api.image) ||
@@ -128,20 +181,11 @@ export const validateDeploymentConfig = (config) => {
   return errors
 }
 
-const readComposeConfig = (envFile) => {
+const readComposeConfig = ({ envFile, composeFile }) => {
   // Compose 출력에는 비밀번호가 있으므로 전체 출력·오류를 전달하지 않는다.
   const result = spawnSync(
     'docker',
-    [
-      'compose',
-      '--env-file',
-      envFile,
-      '-f',
-      'compose.ec2.example.yml',
-      'config',
-      '--format',
-      'json'
-    ],
+    ['compose', '--env-file', envFile, '-f', composeFile, 'config', '--format', 'json'],
     { encoding: 'utf8', timeout: 30_000, maxBuffer: 1024 * 1024 }
   )
   if (result.status !== 0 || result.error) {
@@ -150,18 +194,39 @@ const readComposeConfig = (envFile) => {
   return JSON.parse(result.stdout)
 }
 
+const parseArgs = (args) => {
+  const options = {
+    envFile: '.env.prototype.production',
+    composeFile: 'compose.ec2.example.yml'
+  }
+  for (let index = 0; index < args.length; index += 2) {
+    const flag = args[index]
+    const value = args[index + 1]
+    if (!value || !['--env-file', '--compose-file'].includes(flag)) return null
+    if (flag === '--env-file') options.envFile = value
+    if (flag === '--compose-file') options.composeFile = value
+  }
+  return options
+}
+
 export const runPreflight = (args) => {
-  if (args.length && (args.length !== 2 || args[0] !== '--env-file')) {
-    process.stderr.write('사용법: node deploy/prototype/preflight.mjs [--env-file 파일]\n')
+  const options = parseArgs(args)
+  if (!options) {
+    process.stderr.write(
+      '사용법: node deploy/prototype/preflight.mjs [--env-file 파일] [--compose-file 파일]\n'
+    )
     return 1
   }
-  const envFile = args[1] ?? '.env.prototype.production'
-  if (!existsSync(envFile)) {
+  if (!existsSync(options.envFile)) {
     process.stderr.write('운영 환경 파일이 없습니다. 예시 파일을 참고해 준비하세요.\n')
     return 1
   }
+  if (!existsSync(options.composeFile)) {
+    process.stderr.write('Compose 파일이 없습니다. 배포 형태에 맞는 파일을 지정하세요.\n')
+    return 1
+  }
   try {
-    const errors = validateDeploymentConfig(readComposeConfig(envFile))
+    const errors = validateDeploymentConfig(readComposeConfig(options))
     if (errors.length) {
       process.stderr.write(errors.map((error) => `- ${error}\n`).join(''))
       return 1

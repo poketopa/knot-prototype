@@ -5,12 +5,14 @@ import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
 
 const composePath = 'compose.ec2.example.yml'
+const hostProxyComposePath = 'compose.ec2.host-proxy.yml'
 const envPath = '.env.prototype.production.example'
 const backupScriptPath = 'deploy/prototype/backup-postgres.sh'
 const readmePath = 'deploy/prototype/README.md'
 const restoreGuidancePath = 'deploy/prototype/restore-guidance.md'
 
 const compose = readFileSync(composePath, 'utf8')
+const hostProxyCompose = readFileSync(hostProxyComposePath, 'utf8')
 const envExample = readFileSync(envPath, 'utf8')
 const backupScript = readFileSync(backupScriptPath, 'utf8')
 const readme = readFileSync(readmePath, 'utf8')
@@ -90,7 +92,8 @@ describe('EC2 deployment assets', () => {
       'AWS_REGION=ap-northeast-2',
       'S3_BUCKET=your-private-bucket',
       'S3_PREFIX=knot/prototype-private/recordings',
-      'S3_PRIVATE_PREFIX_CONFIRMED=false'
+      'S3_PRIVATE_PREFIX_CONFIRMED=false',
+      'S3_PUBLIC_READ_ACKNOWLEDGED=false'
     ]) {
       expect(envExample).toContain(key)
     }
@@ -122,7 +125,7 @@ describe('EC2 deployment assets', () => {
     expect(backupScript).not.toMatch(/aws\s+s3|s3:\/\//)
     expect(backupScript).not.toMatch(/pg_restore|dropdb|docker\s+compose[^\n]*(down|rm)/)
     expect(restoreGuidance).toContain('비파괴 복구 리허설')
-    expect(readme).toContain('기존 프록시')
+    expect(readme).toContain('기존 호스트 Nginx')
   })
 
   it('creates a local dump and hash sidecar without leaking dump bytes to stdout', () => {
@@ -181,6 +184,39 @@ describe('EC2 deployment assets', () => {
     expect(rendered).toContain('target: 80')
     expect(rendered).toContain('target: 443')
     expect(rendered).toContain('S3_PRIVATE_PREFIX_CONFIRMED: "false"')
+    expect(rendered).toContain('S3_PUBLIC_READ_ACKNOWLEDGED: "false"')
+  })
+
+  it('supports an existing host Nginx proxy without exposing PostgreSQL or Caddy', () => {
+    expect(hostProxyCompose).not.toContain('caddy:')
+    expect(hostProxyCompose).toContain("'127.0.0.1:4310:4310'")
+    expect(hostProxyCompose).toContain('mem_limit: 256m')
+    expect(hostProxyCompose).toContain('mem_limit: 384m')
+    expect(hostProxyCompose).not.toMatch(/['"]?5432:5432['"]?/)
+  })
+
+  it('renders host-proxy Compose with only API loopback host publishing', () => {
+    const rendered = execFileSync(
+      'docker',
+      ['compose', '--env-file', envPath, '-f', hostProxyComposePath, 'config', '--format', 'json'],
+      { encoding: 'utf8' }
+    )
+    const parsed = JSON.parse(rendered)
+
+    expect(parsed.services.caddy).toBeUndefined()
+    expect(parsed.services.api.ports).toEqual([
+      {
+        mode: 'ingress',
+        host_ip: '127.0.0.1',
+        target: 4310,
+        published: '4310',
+        protocol: 'tcp'
+      }
+    ])
+    expect(parsed.services.postgres.ports).toBeUndefined()
+    expect(parsed.services.postgres.mem_limit).toBe(String(256 * 1024 * 1024))
+    expect(parsed.services.api.mem_limit).toBe(String(384 * 1024 * 1024))
+    expect(parsed.services.migrate.mem_limit).toBe(String(384 * 1024 * 1024))
   })
 
   it('has shell syntax-valid backup script', () => {
