@@ -22,16 +22,36 @@ describe('loadConfig', () => {
     AWS_REGION: 'ap-northeast-2',
     S3_BUCKET: 'fixture-bucket',
     S3_PREFIX: 'knot/prototype-private',
-    S3_PRIVATE_PREFIX_CONFIRMED: 'true'
+    S3_PRIVATE_PREFIX_CONFIRMED: 'true',
+    S3_PUBLIC_READ_ACKNOWLEDGED: 'false'
   }
 
-  it('requires explicit private-prefix confirmation before enabling S3', () => {
-    expect(() => loadConfig({ ...productionEnv, S3_PRIVATE_PREFIX_CONFIRMED: 'false' })).toThrow(
-      'S3_PRIVATE_PREFIX_NOT_CONFIRMED'
-    )
+  it('requires an explicit private or public-read S3 access-mode assertion before enabling S3', () => {
+    expect(() =>
+      loadConfig({
+        ...productionEnv,
+        S3_PRIVATE_PREFIX_CONFIRMED: 'false',
+        S3_PUBLIC_READ_ACKNOWLEDGED: 'false'
+      })
+    ).toThrow('S3_ACCESS_MODE_NOT_CONFIRMED')
     expect(loadConfig(productionEnv).s3).toMatchObject({
       bucket: 'fixture-bucket',
       teamPrefix: 'knot/prototype-private',
+      region: 'ap-northeast-2'
+    })
+  })
+
+  it('allows deliberate public-read S3 mode without pretending the prefix is private', () => {
+    expect(
+      loadConfig({
+        ...productionEnv,
+        S3_PREFIX: 'knot/prototype-public/recordings',
+        S3_PRIVATE_PREFIX_CONFIRMED: 'false',
+        S3_PUBLIC_READ_ACKNOWLEDGED: 'true'
+      }).s3
+    ).toMatchObject({
+      bucket: 'fixture-bucket',
+      teamPrefix: 'knot/prototype-public/recordings',
       region: 'ap-northeast-2'
     })
   })

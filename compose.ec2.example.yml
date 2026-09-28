@@ -61,6 +61,7 @@ services:
       S3_BUCKET: ${S3_BUCKET:?set S3_BUCKET}
       S3_PREFIX: ${S3_PREFIX:?set S3_PREFIX}
       S3_PRIVATE_PREFIX_CONFIRMED: ${S3_PRIVATE_PREFIX_CONFIRMED:?set S3_PRIVATE_PREFIX_CONFIRMED}
+      S3_PUBLIC_READ_ACKNOWLEDGED: ${S3_PUBLIC_READ_ACKNOWLEDGED:-false}
       AUTH_MODE: github
       DATABASE_URL: postgres://knot_migrator:${POSTGRES_PASSWORD}@postgres:5432/knot_prototype
       MIGRATION_DATABASE_URL: postgres://knot_migrator:${POSTGRES_PASSWORD}@postgres:5432/knot_prototype
@@ -93,6 +94,7 @@ services:
       S3_BUCKET: ${S3_BUCKET:?set S3_BUCKET}
       S3_PREFIX: ${S3_PREFIX:?set S3_PREFIX}
       S3_PRIVATE_PREFIX_CONFIRMED: ${S3_PRIVATE_PREFIX_CONFIRMED:?set S3_PRIVATE_PREFIX_CONFIRMED}
+      S3_PUBLIC_READ_ACKNOWLEDGED: ${S3_PUBLIC_READ_ACKNOWLEDGED:-false}
       AUTH_MODE: github
       DATABASE_URL: postgres://knot_api_runtime:${API_RUNTIME_DB_PASSWORD}@postgres:5432/knot_prototype
       OAUTH_CALLBACK_URL: https://${KNOT_API_DOMAIN}/v1/auth/github/callback

@@ -82,9 +82,12 @@ export function loadConfig(env = process.env): AppConfig {
     if (!/^knot\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/.test(teamPrefix)) {
       throw new Error('S3_PREFIX_MUST_BE_WITHIN_KNOT')
     }
-    // This is an operator assertion, not an AWS policy inspection.
-    if (env.S3_PRIVATE_PREFIX_CONFIRMED !== 'true')
-      throw new Error('S3_PRIVATE_PREFIX_NOT_CONFIRMED')
+    // These are operator assertions, not AWS policy inspections.
+    // S3_PRIVATE_PREFIX_CONFIRMED keeps the original private-prefix guard.
+    // S3_PUBLIC_READ_ACKNOWLEDGED is the deliberate public-read prototype mode.
+    if (env.S3_PRIVATE_PREFIX_CONFIRMED !== 'true' && env.S3_PUBLIC_READ_ACKNOWLEDGED !== 'true') {
+      throw new Error('S3_ACCESS_MODE_NOT_CONFIRMED')
+    }
     s3 = { bucket, teamPrefix, region, spoolRoot: resolve(localStorageRoot, 's3-spool') }
   }
 
