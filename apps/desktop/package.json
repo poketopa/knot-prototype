@@ -1,0 +1,59 @@
+{
+  "name": "meeting-stt",
+  "version": "0.3.0-preview.1",
+  "description": "Knot macOS 개인 회의 기록 프로토타입",
+  "private": true,
+  "main": "./out/main/index.js",
+  "scripts": {
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
+    "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
+    "typecheck": "pnpm run typecheck:node && pnpm run typecheck:web",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest",
+    "start": "electron-vite preview",
+    "dev": "electron-vite dev",
+    "build": "pnpm run typecheck && electron-vite build",
+    "postinstall": "electron-builder install-app-deps",
+    "build:unpack": "pnpm run build && electron-builder --dir",
+    "build:win": "pnpm run build && electron-builder --win",
+    "build:mac": "pnpm run build && electron-builder --mac",
+    "build:mac:release": "pnpm run build && electron-builder --mac -c.mac.notarize=true",
+    "release:mac": "pnpm run build && electron-builder --mac -c.mac.notarize=true --publish always",
+    "setup:bin": "tsx scripts/setupBin.ts",
+    "setup:models": "tsx scripts/setupModels.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
+    "@electron-toolkit/utils": "^4.0.0",
+    "better-sqlite3": "^13.0.3",
+    "electron-updater": "^6.8.9",
+    "openai": "^7.23.0",
+    "react-router": "^8.3.0"
+  },
+  "devDependencies": {
+    "@electron-toolkit/tsconfig": "^2.0.0",
+    "@meeting-stt/core": "workspace:*",
+    "@meeting-stt/design": "workspace:*",
+    "@meeting-stt/models": "workspace:*",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.6",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^22.19.1",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.1",
+    "electron": "39.8.10",
+    "electron-builder": "^26.0.12",
+    "electron-vite": "^5.0.0",
+    "happy-dom": "^20.11.6",
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1",
+    "tsx": "^4.23.12",
+    "vite": "^7.2.6"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/poketopa/knot-prototype.git",
+    "directory": "apps/desktop"
+  }
+}

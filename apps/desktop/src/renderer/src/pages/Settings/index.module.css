@@ -1,0 +1,13 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 36px;
+  max-width: 760px;
+  padding: var(--space-6) 48px 48px;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--font-title);
+  font-weight: 700;
+}

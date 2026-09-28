@@ -1,0 +1,68 @@
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  container-type: inline-size;
+}
+
+.layout {
+  display: flex;
+  align-items: flex-start;
+}
+
+.content {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 목차로 이동했을 때 제목이 스크롤 영역 가장자리에 붙지 않게 한다 */
+.content :global(h2) {
+  scroll-margin-top: var(--space-5);
+}
+
+.toc {
+  position: sticky;
+  top: 0;
+  flex-shrink: 0;
+  width: 168px;
+  padding: var(--space-6) var(--space-5) var(--space-6) 0;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  width: 100%;
+  padding: 6px var(--space-3);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: var(--font-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.item:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text);
+}
+
+.item[aria-current='location'] {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+/* 본문(최대 760px + 좌우 여백)과 목차가 함께 들어가지 않으면 본문을 우선한다 */
+@container (max-width: 1000px) {
+  .toc {
+    display: none;
+  }
+}

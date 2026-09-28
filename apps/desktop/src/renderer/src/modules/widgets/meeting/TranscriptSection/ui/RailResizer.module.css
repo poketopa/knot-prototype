@@ -1,0 +1,27 @@
+/* 잡기 쉬운 폭은 그리드 칸 전체이고, 눈에 보이는 선은 가운데 ::after 하나다 */
+.resizer {
+  align-self: stretch;
+  display: flex;
+  justify-content: center;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+}
+
+.resizer::after {
+  content: '';
+  width: 2px;
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: transparent;
+  transition: background 0.15s ease;
+}
+
+.resizer:hover::after {
+  background: var(--color-border-strong);
+}
+
+.resizer:focus-visible::after,
+.resizer[data-resizing='true']::after {
+  background: var(--color-accent);
+}

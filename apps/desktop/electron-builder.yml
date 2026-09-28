@@ -1,0 +1,55 @@
+appId: com.knot.meetingstt.prototype
+productName: Knot Meeting Prototype
+directories:
+  buildResources: build
+# 수집 기준은 이 앱 워크스페이스(apps/desktop) 디렉터리다. 루트의 docs/·plan.md·.github/·설정 파일은
+# 애초에 들어오지 않으므로 여기서 제외하지 않는다 (references/monorepo.md)
+files:
+  - '!src/*'
+  - '!scripts/*'
+  - '!electron.vite.config.{js,ts,mjs,cjs}'
+  - '!{.eslintcache,CHANGELOG.md,README.md}'
+  - '!{.env,.env.*}'
+  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json,vitest.config.ts}'
+  - '!.prototype-smoke.cjs'
+  # macOS 전용 앱이라 리포지토리에 남은 Windows 바이너리는 넣지 않는다
+  - '!resources/bin/win32-*'
+# whisper-cli·sherpa-onnx와 동적 라이브러리는 asar 안에서 실행할 수 없다
+asarUnpack:
+  - resources/**
+win:
+  executableName: meeting-stt
+  # 코드 사이닝은 CSC_LINK·CSC_KEY_PASSWORD 환경변수가 있을 때만 수행된다 (없으면 서명 없이 빌드)
+nsis:
+  artifactName: ${name}-${version}-setup.${ext}
+  shortcutName: ${productName}
+  uninstallDisplayName: ${productName}
+  createDesktopShortcut: always
+mac:
+  target:
+    - target: dmg
+      arch:
+        - arm64
+    - target: dir
+      arch:
+        - arm64
+  minimumSystemVersion: 14.0.0
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  # 하드닝 런타임에서 마이크 접근과 동봉 바이너리 실행에 entitlements가 필요하다
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  extendInfo:
+    NSMicrophoneUsageDescription: 회의를 녹음하여 회의록을 작성하려면 마이크 접근 권한이 필요합니다.
+    CFBundleURLTypes:
+      - CFBundleURLName: Knot Meeting Prototype
+        CFBundleURLSchemes:
+          - knot-prototype
+  # 로컬 빌드 기본값은 공증 없음. 배포 빌드는 `pnpm run build:mac:release`가 켠다
+  # (APPLE_ID·APPLE_APP_SPECIFIC_PASSWORD·APPLE_TEAM_ID 필요, references/distribution.md)
+  notarize: false
+dmg:
+  artifactName: knot-prototype-${version}-arm64.${ext}
+npmRebuild: false
+# prototype build는 원본 앱의 GitHub release/update 채널을 사용하지 않는다.
+publish: null

@@ -1,0 +1,24 @@
+/* 데스크탑 창 구조 전용 치수. 공용 토큰은 @meeting-stt/design/base.css */
+:root {
+  --sidebar-width: 272px;
+  --topbar-height: 52px;
+  --rail-width: 300px;
+}
+
+/* Figma v2 Neutral/50 and shared desktop presentation tokens. */
+:root {
+  --color-bg: #faf9f7;
+  --color-sidebar: #f4f3f0;
+  --color-surface: #ffffff;
+  --color-surface-hover: #f6f5f2;
+  --color-accent: #53524d;
+  --color-accent-soft: #e9e6e1;
+  --color-border: #e9e6e1;
+  --color-divider: #efeeeb;
+  --color-text: #262624;
+  --color-text-muted: #8b8882;
+  --radius-lg: 20px;
+  --font-md: 16px;
+  --font-title: 24px;
+  --shadow-card: 0 2px 4px #34302506, 0 6px 16px #34302504;
+}

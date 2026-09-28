@@ -1,0 +1,10 @@
+OfflineSpeakerDiarizationConfig(segmentation=OfflineSpeakerSegmentationModelConfig(pyannote=OfflineSpeakerSegmentationPyannoteModelConfig(model="scripts/fixtures/models/sherpa-onnx-pyannote-segmentation-3-0.onnx", window_shift_ratio=0.1), num_threads=4, debug=False, provider="cpu"), embedding=SpeakerEmbeddingExtractorConfig(model="scripts/fixtures/models/3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx", num_threads=4, debug=False, provider="cpu"), clustering=FastClusteringConfig(num_clusters=-1, threshold=0.6), min_duration_on=0.3, min_duration_off=0.5)
+Started
+0.959 -- 5.178 speaker_01
+5.684 -- 10.814 speaker_01
+11.303 -- 22.728 speaker_02
+23.200 -- 25.968 speaker_01
+26.474 -- 31.368 speaker_02
+31.874 -- 43.282 speaker_01
+54.622 -- 57.862 speaker_01
+57.743 -- 61.287 speaker_03

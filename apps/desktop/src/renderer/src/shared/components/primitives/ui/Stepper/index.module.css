@@ -1,0 +1,59 @@
+.container {
+  display: inline-flex;
+  align-items: stretch;
+  overflow: hidden;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+}
+
+.container:has(.input[aria-invalid='true']) {
+  border-color: var(--color-danger);
+}
+
+.stepButton {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  color: var(--color-text);
+  font-size: var(--font-lg);
+  line-height: 1;
+  background: var(--color-sidebar);
+  border: none;
+  cursor: pointer;
+}
+
+.stepButton:not(:disabled):hover {
+  background: var(--color-divider);
+}
+
+.stepButton:disabled {
+  color: var(--color-disabled);
+  cursor: not-allowed;
+}
+
+.input {
+  width: 56px;
+  padding: var(--space-2);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  background: var(--color-surface);
+  border: none;
+  border-inline: 1px solid var(--color-border-strong);
+}
+
+.input::placeholder {
+  color: var(--color-text-muted);
+}
+
+/* 컨테이너가 overflow를 자르므로 포커스 외곽선은 컨테이너에 그린다 */
+.container:has(:focus-visible) {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.container :focus-visible {
+  outline: none;
+}

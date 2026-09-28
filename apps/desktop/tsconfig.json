@@ -1,0 +1,13 @@
+{
+  "files": [],
+  "references": [{ "path": "./tsconfig.node.json" }, { "path": "./tsconfig.web.json" }],
+  // tsc는 files가 비어 있어 이 설정을 쓰지 않지만, tsx(`pnpm tsx scripts/*.ts`)가 루트 tsconfig의
+  // paths로 별칭을 해석하므로 여기에도 선언해 둔다.
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@shared/*": ["src/shared/*"],
+      "@renderer/*": ["src/renderer/src/*"]
+    }
+  }
+}

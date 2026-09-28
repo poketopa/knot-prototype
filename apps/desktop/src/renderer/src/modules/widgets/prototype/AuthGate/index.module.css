@@ -1,0 +1,81 @@
+.authenticated {
+  height: 100%;
+}
+.page {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  background: #faf9f6;
+}
+.titleBar {
+  position: fixed;
+  inset: 0 0 auto;
+  height: 36px;
+  -webkit-app-region: drag;
+}
+.card {
+  width: min(520px, 90vw);
+  padding: 48px;
+  text-align: center;
+  background: white;
+  border: 1px solid #eae7e1;
+  border-radius: 28px;
+  box-shadow: 0 12px 50px #35332906;
+}
+.logo {
+  font-size: 42px;
+  font-weight: 800;
+  letter-spacing: -3px;
+  color: #373733;
+}
+.logo span {
+  font-size: 14px;
+  margin-left: 3px;
+}
+.eyebrow {
+  margin-top: 28px;
+  color: #88867f;
+  font-size: 13px;
+}
+.card h1 {
+  font-size: 30px;
+  line-height: 1.4;
+  letter-spacing: -1px;
+}
+.description {
+  color: #77756f;
+  line-height: 1.8;
+}
+.login {
+  margin-top: 28px;
+  width: 100%;
+  padding: 15px;
+  border: 0;
+  background: #3c3c38;
+  color: white;
+  border-radius: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.login:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.retry {
+  display: block;
+  margin: 12px auto 0;
+  border: none;
+  background: transparent;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.caption {
+  margin-top: 24px;
+  font-size: 12px;
+  color: #99968e;
+}
+.error {
+  color: #b4232a;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}

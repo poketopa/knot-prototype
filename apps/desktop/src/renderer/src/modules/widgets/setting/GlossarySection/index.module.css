@@ -1,0 +1,84 @@
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) 0;
+  border-top: 1px solid var(--color-divider);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.label {
+  font-size: var(--font-md);
+  font-weight: 600;
+}
+
+.textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--space-2) var(--space-3);
+  font: inherit;
+  font-size: var(--font-md);
+  line-height: 1.6;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  resize: vertical;
+}
+
+.textarea:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.textarea:disabled {
+  color: var(--color-text-muted);
+}
+
+/* 열 너비는 ui/TermRow.module.css의 행과 맞춘다. 마지막 열은 삭제 버튼 자리다 */
+.termHeader {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 28px;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+  color: var(--color-text-muted);
+  font-size: var(--font-xs);
+}
+
+.termList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.hint {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+}
+
+.notice {
+  margin: 0;
+  color: var(--color-success);
+  font-size: var(--font-sm);
+}
+
+.error {
+  margin: 0;
+  color: var(--color-danger);
+  font-size: var(--font-sm);
+}

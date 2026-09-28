@@ -1,0 +1,47 @@
+.group {
+  display: flex;
+  flex-direction: column;
+}
+
+.heading {
+  margin: 0;
+  padding: 14px var(--space-2) 6px;
+  color: var(--color-text-muted);
+  font-size: var(--font-xs);
+  font-weight: 600;
+}
+
+.group:first-child .heading {
+  padding-top: 10px;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.message {
+  margin: 0;
+  padding: var(--space-3) var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+  line-height: 1.6;
+}
+
+.error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-2);
+}
+
+.errorMessage {
+  margin: 0;
+  color: var(--color-danger);
+  font-size: var(--font-sm);
+}

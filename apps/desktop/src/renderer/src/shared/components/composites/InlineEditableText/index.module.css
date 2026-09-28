@@ -1,0 +1,39 @@
+/* 표시 상태와 편집 상태가 같은 박스·같은 줄바꿈을 가져야 편집으로 넘어갈 때 글자가 움직이지 않는다 */
+.display,
+.editor {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-1) var(--space-2);
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  word-spacing: inherit;
+  text-align: left;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+}
+
+.display {
+  background: none;
+  cursor: text;
+}
+
+.display:hover,
+.display:focus-visible {
+  background: var(--color-surface-hover);
+  border-color: var(--color-border);
+}
+
+.editor {
+  overflow: hidden;
+  background: var(--color-surface-hover);
+  border-color: var(--color-accent);
+  outline: none;
+  resize: none;
+  /* 높이를 내용에 맞춰 늘리고 줄여, 표시 상태와 같은 줄 수로 보이게 한다 */
+  field-sizing: content;
+}

@@ -1,0 +1,141 @@
+.panel {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  padding: 24px;
+  border: 1px solid var(--color-border, #e9e6e1);
+  border-radius: var(--radius-lg, 20px);
+  color: var(--color-text, #262624);
+  background: #fff;
+  box-shadow: var(--shadow-card);
+}
+
+.panel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 28px;
+}
+
+.panel h2 {
+  margin: 0;
+  color: var(--color-text, #262624);
+  font-size: 18px;
+  font-weight: 650;
+}
+
+.closeButton {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--color-border, #e9e6e1);
+  border-radius: 50%;
+  color: var(--color-text-muted, #8b8882);
+  background: var(--color-bg, #faf9f7);
+  cursor: pointer;
+}
+
+.closeButton svg {
+  width: 16px;
+  height: 16px;
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 0 18px;
+  border-bottom: 1px solid var(--color-border, #e9e6e1);
+  color: var(--color-text-muted, #8b8882);
+  font-size: 13px;
+}
+
+.meta strong {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border, #e9e6e1);
+  border-radius: 999px;
+  color: var(--color-text, #262624);
+  background: var(--color-bg, #faf9f7);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.utterances {
+  min-height: 0;
+  flex: 1;
+  padding: 2px 4px 0 0;
+  overflow: auto;
+}
+
+.utterance {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 14px;
+  padding: 18px 0;
+}
+
+.utterance time {
+  flex-shrink: 0;
+  color: var(--color-text-muted, #8b8882);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.8;
+}
+
+.utterance p {
+  margin: 0;
+  color: var(--color-text, #262624);
+  font-size: 16px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+
+.utterance p span {
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.caption {
+  margin: 18px 0 0;
+  color: var(--color-text-muted, #8b8882);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.status,
+.empty {
+  color: var(--color-text-muted, #8b8882);
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.error {
+  padding: 18px 0;
+  color: var(--color-text, #262624);
+}
+
+.error p {
+  margin: 0 0 14px;
+  color: #9d2b2f;
+  font-size: 14px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.error button {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--color-border, #e9e6e1);
+  border-radius: 999px;
+  color: var(--color-text, #262624);
+  background: var(--color-bg, #faf9f7);
+  font-size: 13px;
+  cursor: pointer;
+}

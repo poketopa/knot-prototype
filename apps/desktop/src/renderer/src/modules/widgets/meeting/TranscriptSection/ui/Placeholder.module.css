@@ -1,0 +1,14 @@
+.message,
+.error {
+  margin: 0;
+  padding: 28px var(--space-6);
+  font-size: var(--font-base);
+}
+
+.message {
+  color: var(--color-text-muted);
+}
+
+.error {
+  color: var(--color-danger);
+}

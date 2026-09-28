@@ -1,0 +1,48 @@
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  text-decoration: none;
+}
+
+.item:hover {
+  background: var(--color-surface);
+}
+
+.active {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+}
+
+.title {
+  overflow: hidden;
+  font-size: var(--font-base);
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.meta,
+.recording,
+.error {
+  font-size: var(--font-xs);
+}
+
+.meta {
+  color: var(--color-text-muted);
+}
+
+.recording {
+  color: var(--color-accent);
+  font-weight: 500;
+}
+
+.error {
+  overflow: hidden;
+  color: var(--color-danger);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

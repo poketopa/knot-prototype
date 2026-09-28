@@ -1,0 +1,109 @@
+.section {
+  --section-padding: 18px;
+
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+/* 헤더 전체가 접기 버튼이라 카드 위쪽을 좌우 끝까지 채우고, 버튼 기본 모양은 지운다 */
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  margin: 0;
+  padding: var(--section-padding);
+  color: var(--color-text);
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: inherit;
+  cursor: pointer;
+}
+
+.toggle[aria-expanded='true'] {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.toggle:hover {
+  background: var(--color-surface-hover);
+}
+
+.toggle:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+.chevron {
+  display: flex;
+  color: var(--color-text-muted);
+  transition: transform 0.15s ease;
+}
+
+.toggle[aria-expanded='false'] .chevron {
+  transform: rotate(-90deg);
+}
+
+.title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.caption {
+  margin-left: auto;
+  color: var(--color-text-muted);
+  font-size: var(--font-xs);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: 0 var(--section-padding) var(--section-padding);
+}
+
+/* 마크다운 라이브러리를 들이지 않고 줄바꿈만 보존해 보여 준다.
+   긴 요약은 레일(오른쪽 열)이 스스로 스크롤하므로 여기서 높이를 막지 않는다 */
+.summary {
+  margin: 0;
+  font-size: var(--font-base);
+  line-height: 1.75;
+  white-space: pre-wrap;
+}
+
+.pending {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.message {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+  line-height: 1.6;
+}
+
+.error {
+  margin: 0;
+  color: var(--color-danger);
+  font-size: var(--font-sm);
+}
+
+.link {
+  color: var(--color-accent);
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.action {
+  flex: 1;
+}
