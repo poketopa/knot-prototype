@@ -1,0 +1,120 @@
+name: knot-prototype-ec2
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    logging: &bounded-logging
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      KNOT_API_DOMAIN: ${KNOT_API_DOMAIN:?set KNOT_API_DOMAIN}
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./deploy/prototype/Caddyfile:/etc/caddy/Caddyfile:ro
+      - knot-prototype-caddy-data:/data
+      - knot-prototype-caddy-config:/config
+    healthcheck:
+      test: ['CMD', 'caddy', 'validate', '--config', '/etc/caddy/Caddyfile']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    logging: *bounded-logging
+    environment:
+      POSTGRES_DB: knot_prototype
+      POSTGRES_USER: knot_migrator
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - knot-prototype-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U knot_migrator -d knot_prototype']
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  migrate:
+    image: ${KNOT_API_IMAGE:?set KNOT_API_IMAGE}
+    platform: linux/arm64
+    restart: 'no'
+    logging: *bounded-logging
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ['corepack', 'pnpm', '--filter', '@meeting-stt/api', 'run', 'db:migrate']
+    environment:
+      APP_ENV: production
+      API_HOST: 0.0.0.0
+      PORT: 4310
+      STORAGE_DRIVER: ${STORAGE_DRIVER:?set STORAGE_DRIVER}
+      AWS_REGION: ${AWS_REGION:?set AWS_REGION}
+      S3_BUCKET: ${S3_BUCKET:?set S3_BUCKET}
+      S3_PREFIX: ${S3_PREFIX:?set S3_PREFIX}
+      S3_PRIVATE_PREFIX_CONFIRMED: ${S3_PRIVATE_PREFIX_CONFIRMED:?set S3_PRIVATE_PREFIX_CONFIRMED}
+      AUTH_MODE: github
+      DATABASE_URL: postgres://knot_migrator:${POSTGRES_PASSWORD}@postgres:5432/knot_prototype
+      MIGRATION_DATABASE_URL: postgres://knot_migrator:${POSTGRES_PASSWORD}@postgres:5432/knot_prototype
+      API_RUNTIME_DB_USER: knot_api_runtime
+      API_RUNTIME_DB_PASSWORD: ${API_RUNTIME_DB_PASSWORD:?set API_RUNTIME_DB_PASSWORD}
+      OAUTH_CALLBACK_URL: https://${KNOT_API_DOMAIN}/v1/auth/github/callback
+      DESKTOP_SCHEME: knot-prototype
+      JSON_BODY_LIMIT_BYTES: ${JSON_BODY_LIMIT_BYTES:-33554432}
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-1073741824}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:?set GITHUB_CLIENT_ID}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:?set GITHUB_CLIENT_SECRET}
+
+  api:
+    image: ${KNOT_API_IMAGE:?set KNOT_API_IMAGE}
+    platform: linux/arm64
+    restart: unless-stopped
+    logging: *bounded-logging
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    command: ['corepack', 'pnpm', '--filter', '@meeting-stt/api', 'run', 'start']
+    environment:
+      APP_ENV: production
+      API_HOST: 0.0.0.0
+      PORT: 4310
+      STORAGE_DRIVER: ${STORAGE_DRIVER:?set STORAGE_DRIVER}
+      AWS_REGION: ${AWS_REGION:?set AWS_REGION}
+      S3_BUCKET: ${S3_BUCKET:?set S3_BUCKET}
+      S3_PREFIX: ${S3_PREFIX:?set S3_PREFIX}
+      S3_PRIVATE_PREFIX_CONFIRMED: ${S3_PRIVATE_PREFIX_CONFIRMED:?set S3_PRIVATE_PREFIX_CONFIRMED}
+      AUTH_MODE: github
+      DATABASE_URL: postgres://knot_api_runtime:${API_RUNTIME_DB_PASSWORD}@postgres:5432/knot_prototype
+      OAUTH_CALLBACK_URL: https://${KNOT_API_DOMAIN}/v1/auth/github/callback
+      DESKTOP_SCHEME: knot-prototype
+      JSON_BODY_LIMIT_BYTES: ${JSON_BODY_LIMIT_BYTES:-33554432}
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-1073741824}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:?set GITHUB_CLIENT_ID}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:?set GITHUB_CLIENT_SECRET}
+    expose:
+      - '4310'
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'node -e "fetch(''http://127.0.0.1:4310/health'').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"'
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+volumes:
+  knot-prototype-pg:
+  knot-prototype-caddy-data:
+  knot-prototype-caddy-config:

@@ -1,0 +1,11 @@
+{$KNOT_API_DOMAIN} {
+  encode zstd gzip
+
+  header {
+    X-Content-Type-Options nosniff
+    Referrer-Policy no-referrer
+    -Server
+  }
+
+  reverse_proxy api:4310
+}

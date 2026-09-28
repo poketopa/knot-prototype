@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Knot prototype local PostgreSQL backup daily at 03:00 KST
+Documentation=file:/opt/knot-prototype/deploy/prototype/systemd/README.md
+
+[Timer]
+# 03:00 Asia/Seoul is 18:00 UTC on the previous day.
+OnCalendar=*-*-* 18:00:00 UTC
+Persistent=true
+Unit=knot-prototype-backup.service
+
+[Install]
+WantedBy=timers.target

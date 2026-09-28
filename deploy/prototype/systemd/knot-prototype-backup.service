@@ -1,0 +1,11 @@
+[Unit]
+Description=Knot prototype local PostgreSQL backup
+Documentation=file:/opt/knot-prototype/deploy/prototype/restore-guidance.md
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/knot-prototype
+UMask=0077
+ExecStart=/opt/knot-prototype/deploy/prototype/backup-postgres.sh
