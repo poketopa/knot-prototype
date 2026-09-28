@@ -1,0 +1,14 @@
+{
+  "name": "@meeting-stt/design",
+  "version": "0.0.0",
+  "private": true,
+  "description": "디자인 토큰과 동봉 글꼴 — 데스크탑 앱과 브라우저 프로토타입이 같은 화면을 그리는 단일 정의",
+  "type": "module",
+  "exports": {
+    "./*.css": "./src/*.css"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  }
+}

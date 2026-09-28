@@ -1,0 +1,24 @@
+/* CDN을 쓰지 않고 배포처 원본을 동봉한다. 두 앱이 이 파일을 import한다 (references/architecture.md "글꼴 동봉") */
+@font-face {
+  font-family: 'Google Sans';
+  src: url('./fonts/googleSans/googleSansVariable.ttf') format('truetype');
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Google Sans Code';
+  src: url('./fonts/googleSansCode/googleSansCodeVariable.ttf') format('truetype');
+  font-weight: 300 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Pretendard';
+  src: url('./fonts/pretendard/pretendardVariable.woff2') format('woff2');
+  font-weight: 45 920;
+  font-style: normal;
+  font-display: swap;
+}

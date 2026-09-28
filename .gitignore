@@ -1,0 +1,57 @@
+# Dependencies and generated build artifacts
+node_modules/
+dist/
+out/
+coverage/
+.eslintcache
+*.tsbuildinfo
+.DS_Store
+*.log
+*.log.*
+.vercel/
+
+# Secrets: only reviewed templates may be committed
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.mobileprovision
+credentials
+
+# Personal work records and local runtime data
+.local/
+.omx/
+.codex/
+.claude/
+var/
+backups/
+recordings/
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.dump
+*.dump.*
+*.wav
+*.mp3
+*.m4a
+*.flac
+
+# Downloaded inference binaries/models and verification fixtures
+apps/desktop/resources/bin/
+apps/desktop/scripts/fixtures/
+apps/desktop/.prototype-smoke.cjs
+*.bin
+*.onnx
+*.gguf
+*.dmg
+*.blockmap
+*.zip
+*.tar.gz
+*.tgz

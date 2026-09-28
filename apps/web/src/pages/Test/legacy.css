@@ -1,0 +1,270 @@
+/*
+ * 프로토타입 화면 배치. 색·간격·반경·글꼴은 @meeting-stt/design/base.css 토큰만 쓴다.
+ * 컨트롤(버튼·스테퍼·진행률·레벨 미터)은 src/components/*의 CSS Modules가 맡는다.
+ */
+.app {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.app h1 {
+  margin: 0 0 var(--space-1);
+  font-size: var(--font-xl);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.app h2 {
+  margin: 0 0 var(--space-3);
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+  font-weight: 600;
+}
+
+.app header p {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.panel {
+  padding: var(--space-5);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  font-size: var(--font-base);
+}
+
+.facts dt {
+  color: var(--color-text-muted);
+}
+
+.facts dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+}
+
+.detail {
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+}
+
+.dropZone {
+  margin-bottom: var(--space-3);
+  padding: var(--space-6);
+  color: var(--color-text-muted);
+  text-align: center;
+  background: var(--color-sidebar);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.dropZone:hover,
+.dropZone.dragging {
+  color: var(--color-text);
+  border-color: var(--color-accent);
+}
+
+.waveform {
+  display: block;
+  width: 100%;
+  height: 72px;
+  margin-bottom: var(--space-3);
+  background: var(--color-sidebar);
+  border-radius: var(--radius-sm);
+}
+
+.options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-4);
+}
+
+.options label,
+.option {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  color: var(--color-text-muted);
+  font-size: var(--font-xs);
+}
+
+.app select {
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  color: var(--color-text);
+  font-size: var(--font-sm);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+}
+
+.app select:disabled {
+  color: var(--color-text-muted);
+  background: var(--color-sidebar);
+}
+
+.hint {
+  margin: var(--space-3) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-xs);
+}
+
+.hint.emphasis {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.progress {
+  margin-top: var(--space-4);
+}
+
+.progress p {
+  margin: var(--space-2) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.error {
+  margin: var(--space-3) 0 0;
+  color: var(--color-danger);
+}
+
+.measurements {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.measurements th,
+.measurements td {
+  padding: var(--space-2);
+  text-align: left;
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.measurements th {
+  width: 18%;
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
+
+.transcript {
+  max-height: 520px;
+  margin: var(--space-4) calc(var(--space-4) * -1) 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+/* 데스크탑 UtteranceRow와 같은 모양: 시각 · (화자 + 본문) */
+.transcript li {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 14px;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+}
+
+.transcript li:hover {
+  background: var(--color-sidebar);
+}
+
+.transcript .time {
+  padding-top: 3px;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.utteranceBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.transcript .speaker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-sm);
+  font-weight: 600;
+}
+
+.speakerDot {
+  width: 8px;
+  height: 8px;
+  background: currentColor;
+  border-radius: var(--radius-full);
+}
+
+.transcript .text {
+  margin: 0;
+  font-size: var(--font-md);
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+
+.recorder {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+}
+
+.elapsed {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+/* 녹음 중 표시는 강조색이다. 빨강은 오류 전용 (architecture.md "디자인 토큰") */
+.elapsed.recording {
+  color: var(--color-accent);
+}
+
+.meterRow {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.meterValue {
+  min-width: 82px;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-sm);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}

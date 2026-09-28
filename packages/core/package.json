@@ -1,0 +1,14 @@
+{
+  "name": "@meeting-stt/core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "데스크탑·브라우저 앱이 함께 쓰는 순수 TS 로직 (파이프라인 타입, 화자 배정·병합, 복사 포맷, 정규화 공식, 용어 읽기 사전)",
+  "type": "module",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "@meeting-stt/models",
+  "version": "0.0.0",
+  "private": true,
+  "description": "모델 카탈로그 — 데스크탑 동봉·다운로드 자산과 브라우저 저장소 id·dtype의 단일 정의",
+  "type": "module",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  }
+}

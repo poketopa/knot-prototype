@@ -1,0 +1,107 @@
+/*
+ * 데스크탑 앱과 브라우저 프로토타입이 함께 쓰는 디자인 토큰.
+ * 값의 근거는 .claude/skills/meeting-stt-dev/references/architecture.md "화면 디자인" 절
+ */
+:root {
+  /* 다크 팔레트를 설계하기 전까지 밝은 화면만 지원한다 */
+  color-scheme: light;
+
+  --color-bg: #ffffff;
+  --color-sidebar: #f7f7f8;
+  --color-surface: #ffffff;
+  --color-surface-hover: #f7f7f8;
+  --color-border: #e7e7ea;
+  --color-border-strong: #dcdce0;
+  --color-divider: #ededf0;
+  --color-disabled: #d4d4d9;
+  --color-text: #111113;
+  --color-text-muted: #6b6b73;
+  --color-text-inverse: #ffffff;
+  --color-accent: #4338ca;
+  --color-accent-text: #ffffff;
+  --color-accent-soft: #e0e7ff;
+  /* 빨강은 오류 전용이고 녹음 상태에 쓰지 않는다 */
+  --color-danger: #b4232a;
+  --color-danger-soft: #fdecec;
+  --color-success: #15803d;
+
+  --color-speaker-1: #0f766e;
+  --color-speaker-2: #c2410c;
+  --color-speaker-3: #be185d;
+  --color-speaker-4: #854d0e;
+  --color-speaker-5: #1d4ed8;
+  --color-speaker-6: #7e22ce;
+  --color-speaker-7: #4d7c0f;
+  --color-speaker-8: #475569;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-full: 999px;
+
+  /* Google Sans에는 한글 글리프가 없어 한글은 Pretendard로 떨어진다 */
+  --font-sans: 'Google Sans', 'Pretendard', -apple-system, sans-serif;
+  --font-mono: 'Google Sans Code', 'Google Sans', monospace;
+
+  --font-xs: 12px;
+  --font-sm: 13px;
+  --font-base: 14px;
+  --font-md: 15px;
+  --font-lg: 18px;
+  --font-xl: 22px;
+  --font-title: 30px;
+  --font-display: 40px;
+  --font-hero: 44px;
+  --font-timer: 88px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: var(--font-md);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+a {
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+mark {
+  background: var(--color-accent-soft);
+  color: inherit;
+  border-radius: 2px;
+}

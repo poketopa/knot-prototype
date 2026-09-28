@@ -1,0 +1,130 @@
+.body {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-6);
+  padding: var(--space-6) 96px;
+  overflow-y: auto;
+}
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  text-align: center;
+}
+
+.title {
+  margin: 0;
+  font-size: 34px;
+  font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: -0.02em;
+}
+
+.lead {
+  max-width: 520px;
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-md);
+  line-height: 1.75;
+}
+
+.speakerCard {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 14px 18px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.speakerText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.speakerTitle {
+  font-size: var(--font-base);
+  font-weight: 600;
+}
+
+.speakerHint {
+  color: var(--color-text-muted);
+  font-size: var(--font-xs);
+}
+
+.startButton {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: 56px;
+  padding: 0 var(--space-6);
+  color: var(--color-text-inverse);
+  font-size: 17px;
+  font-weight: 600;
+  background: var(--color-accent);
+  border: none;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+}
+
+.startButton:not(:disabled):hover {
+  opacity: 0.9;
+}
+
+.startButton:disabled {
+  background: var(--color-disabled);
+  cursor: not-allowed;
+}
+
+.startDot {
+  width: 14px;
+  height: 14px;
+  background: currentColor;
+  border-radius: var(--radius-full);
+}
+
+.error {
+  margin: 0;
+  color: var(--color-danger);
+  font-size: var(--font-sm);
+}
+
+.facts {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+}
+
+.gpuOk {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-success);
+}
+
+.gpuText {
+  color: var(--color-text);
+}
+
+.fileButton {
+  padding: 0;
+  color: var(--color-text);
+  font-size: var(--font-sm);
+  text-decoration: underline;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.fileButton:disabled {
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+}

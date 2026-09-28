@@ -1,0 +1,29 @@
+.badge {
+  display: inline-block;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  font-size: var(--font-sm);
+  font-weight: 500;
+  line-height: 1.7;
+  white-space: nowrap;
+}
+
+.neutral {
+  background: var(--color-sidebar);
+  color: var(--color-text-muted);
+}
+
+.accent {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+
+.success {
+  background: var(--color-sidebar);
+  color: var(--color-success);
+}
+
+.danger {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}

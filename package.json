@@ -1,0 +1,54 @@
+{
+  "name": "meeting-stt-workspace",
+  "version": "0.0.0",
+  "description": "meeting-stt 모노레포 — 데스크탑 앱·브라우저 프로토타입·공용 패키지",
+  "private": true,
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "format": "prettier --write .",
+    "lint": "eslint --cache .",
+    "typecheck": "pnpm -r run typecheck",
+    "test": "pnpm -r run test",
+    "dev": "pnpm --filter meeting-stt run dev",
+    "dev:web": "pnpm --filter @meeting-stt/web run dev",
+    "start": "pnpm --filter meeting-stt run start",
+    "build": "pnpm --filter meeting-stt run build",
+    "build:web": "pnpm --filter @meeting-stt/web run build",
+    "build:unpack": "pnpm --filter meeting-stt run build:unpack",
+    "build:mac": "pnpm --filter meeting-stt run build:mac",
+    "build:mac:release": "pnpm --filter meeting-stt run build:mac:release",
+    "release:mac": "pnpm --filter meeting-stt run release:mac",
+    "setup:bin": "pnpm --filter meeting-stt run setup:bin",
+    "setup:models": "pnpm --filter meeting-stt run setup:models",
+    "prototype:start": "node scripts/startPrototype.mjs",
+    "prototype:status": "docker --context desktop-linux compose -p knot-prototype-local -f compose.local.yml ps",
+    "prototype:stop": "docker --context desktop-linux compose -p knot-prototype-local -f compose.local.yml stop",
+    "prototype:dev": "node scripts/startPrototype.mjs --dev",
+    "prototype:server": "node scripts/startPrototype.mjs --server-only"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "electron-winstaller",
+      "esbuild",
+      "better-sqlite3",
+      "sharp",
+      "onnxruntime-node",
+      "protobufjs"
+    ]
+  },
+  "devDependencies": {
+    "@electron-toolkit/eslint-config-prettier": "^3.0.0",
+    "@electron-toolkit/eslint-config-ts": "^3.1.0",
+    "eslint": "^9.39.1",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.4.24",
+    "prettier": "^3.7.4",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
+  }
+}

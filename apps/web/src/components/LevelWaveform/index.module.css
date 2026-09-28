@@ -1,0 +1,37 @@
+.waveform {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.md {
+  height: 72px;
+}
+
+.sm {
+  gap: 3px;
+  width: auto;
+  height: 36px;
+}
+
+.bar,
+.emptyBar {
+  flex-shrink: 0;
+  width: 5px;
+  border-radius: var(--radius-full);
+  transition: height 0.12s linear;
+}
+
+.sm .bar,
+.sm .emptyBar {
+  width: 4px;
+}
+
+.bar {
+  background: var(--color-text);
+}
+
+.emptyBar {
+  background: var(--color-disabled);
+}

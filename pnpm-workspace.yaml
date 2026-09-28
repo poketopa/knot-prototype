@@ -1,0 +1,4 @@
+# 워크스페이스 경계·관리 규약은 .claude/skills/meeting-stt-dev/references/monorepo.md
+packages:
+  - apps/*
+  - packages/*
