@@ -1,0 +1,48 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: knot_prototype
+      POSTGRES_USER: knot_migrator
+      POSTGRES_PASSWORD: knot_local_migrator
+    volumes:
+      - knot-prototype-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U knot_migrator -d knot_prototype']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      APP_ENV: local
+      CONTAINER: 'true'
+      API_HOST: 0.0.0.0
+      PORT: 4310
+      STORAGE_DRIVER: local
+      AUTH_MODE: github
+      DATABASE_URL: postgres://knot_api_runtime:knot_local_runtime@postgres:5432/knot_prototype
+      MIGRATION_DATABASE_URL: postgres://knot_migrator:knot_local_migrator@postgres:5432/knot_prototype
+      API_RUNTIME_DB_USER: knot_api_runtime
+      API_RUNTIME_DB_PASSWORD: knot_local_runtime
+      LOCAL_STORAGE_ROOT: /var/lib/knot-prototype/storage
+      OAUTH_CALLBACK_URL: http://127.0.0.1:4310/v1/auth/github/callback
+      DESKTOP_SCHEME: knot-prototype
+      JSON_BODY_LIMIT_BYTES: 33554432
+      MAX_UPLOAD_BYTES: 1073741824
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+    ports:
+      - '127.0.0.1:4310:4310'
+    volumes:
+      - knot-prototype-files:/var/lib/knot-prototype/storage
+
+volumes:
+  knot-prototype-pg:
+  knot-prototype-files:

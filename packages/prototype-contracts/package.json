@@ -1,0 +1,14 @@
+{
+  "name": "@meeting-stt/prototype-contracts",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Knot prototype API request/response contracts and JSON schemas",
+  "type": "module",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  }
+}
