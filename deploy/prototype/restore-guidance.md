@@ -8,13 +8,13 @@
 
 ## 업로드 조건
 
-S3 prefix의 비공개 경계가 승인된 뒤에만 백업을 업로드한다.
+S3 prefix의 비공개 경계가 승인된 뒤에만 백업을 업로드한다. `S3_PUBLIC_READ_ACKNOWLEDGED=true`는 녹음 파일, 전사 원본, AI 정리본을 위한 프로토타입 모드이며 DB 백업 업로드 승인으로 해석하지 않는다.
 
 ```text
 s3://your-private-bucket/knot/prototype-private/backups/
 ```
 
-공개 읽기 가능성이 남아 있는 prefix에는 녹음, 전사, 요약, 백업을 업로드하지 않는다.
+공개 읽기 가능성이 남아 있는 prefix에는 DB 백업을 업로드하지 않는다.
 
 ## 일일 로컬 백업 timer
 
