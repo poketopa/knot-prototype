@@ -6,6 +6,8 @@ Knot Meeting Prototype은 macOS 개인 회의 기록 검증 도구입니다. Git
 
 ## 상태
 
+현재 `v0.3.0-preview.2`에는 macOS 앱 서명 오류가 확인돼 새 설치를 보류해야 합니다. 수정본은 서명·공증 검증 후 공개합니다.
+
 `v0.3.0-preview.2`는 공유 API에 연결하는 preview입니다. macOS 14 이상 Apple Silicon Mac에서 사용하며, 앱 사용자는 로컬 Docker나 OAuth 앱을 설정할 필요가 없습니다. Developer ID 서명과 Apple 공증은 아직 없습니다.
 
 이 검증 환경에 업로드한 녹음·전사·AI 정리 파일은 공개 읽기가 가능합니다. 공개해도 되는 테스트 회의만 사용하세요.

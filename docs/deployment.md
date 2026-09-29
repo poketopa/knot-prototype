@@ -70,3 +70,31 @@ host-proxy 배포에서 로컬 DB 백업을 실행할 때는 같은 compose 파�
 ```bash
 COMPOSE_FILE=compose.ec2.host-proxy.yml ./deploy/prototype/backup-postgres.sh
 ```
+
+## macOS 배포 파일 검증
+
+다운로드한 앱의 실행 가능 여부는 DMG 체크섬이나 로컬 Electron 실행만으로 확인할 수 없습니다. 배포용 빌드는 Developer ID 서명, Apple 공증 티켓, Gatekeeper 검사를 모두 통과해야 합니다.
+
+Developer ID Application 인증서를 Mac 키체인에 설치하고, 공증 인증정보를 별도 키체인 프로필에 저장합니다. 앱 암호는 명령 인자에 적지 않고 `notarytool`의 비공개 입력창에 입력합니다.
+
+```bash
+xcrun notarytool store-credentials knot-prototype-notary --apple-id '<Apple Developer 계정>' --team-id '<Team ID>'
+```
+
+실제 API 주소와 공증 프로필을 지정해 빌드합니다.
+
+```bash
+APPLE_KEYCHAIN_PROFILE=knot-prototype-notary \
+KNOT_BUILD_API_BASE_URL=https://api.example.com/v1 \
+corepack pnpm build:mac:release
+```
+
+`build:mac:release`는 코드 서명을 필수로 요구하고, 빌드 후 `codesign`, `stapler`, `spctl`을 실행합니다. 하나라도 실패하면 릴리스 파일을 게시하지 않습니다. `release:mac`도 검증된 파일을 준비하는 명령이며, GitHub 업로드는 검증 완료 후 별도로 수행합니다.
+
+기존 앱 파일만 검사하려면 저장소 루트에서 실행합니다.
+
+```bash
+node apps/desktop/scripts/verifyMacRelease.mjs '/absolute/path/Knot Meeting Prototype.app'
+```
+
+`v0.3.0-preview.2`에서 확인된 `code has no resources but signature indicates they must be present` 오류는 이 검사에서 실패합니다. 서명 검사에 실패한 앱은 인증서로 다시 빌드해야 합니다.
