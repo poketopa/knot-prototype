@@ -6,9 +6,11 @@ Knot Meeting Prototype은 macOS 개인 회의 기록 검증 도구입니다. Git
 
 ## 상태
 
-`v0.3.0-preview.1`은 로컬 백엔드 중심 preview입니다. macOS 14 이상 Apple Silicon Mac을 대상으로 하며, 아직 서명·공증된 공개 배포본이나 공유 서버를 제공하지 않습니다. 로컬 Docker 백엔드와 GitHub OAuth 설정이 필요합니다.
+`v0.3.0-preview.2`는 공유 API에 연결하는 preview입니다. macOS 14 이상 Apple Silicon Mac에서 사용하며, 앱 사용자는 로컬 Docker나 OAuth 앱을 설정할 필요가 없습니다. Developer ID 서명과 Apple 공증은 아직 없습니다.
 
-릴리스 노트: [docs/releases/0.3.0-preview.1.md](docs/releases/0.3.0-preview.1.md)
+이 검증 환경에 업로드한 녹음·전사·AI 정리 파일은 공개 읽기가 가능합니다. 공개해도 되는 테스트 회의만 사용하세요.
+
+릴리스 노트: [docs/releases/0.3.0-preview.2.md](docs/releases/0.3.0-preview.2.md)
 
 ## 기능
 
@@ -18,7 +20,11 @@ Knot Meeting Prototype은 macOS 개인 회의 기록 검증 도구입니다. Git
 - 로컬 Fastify API와 PostgreSQL 저장
 - EC2 배포 예시, 로컬 DB 백업 스크립트, systemd timer 템플릿
 
-## 빠른 시작
+## 앱 설치
+
+[공유 서버 연결 버전](https://github.com/poketopa/knot-prototype/releases/tag/v0.3.0-preview.2)에서 DMG를 내려받아 Applications에 복사합니다. 첫 실행에서 모델을 설정하고 GitHub에 로그인합니다.
+
+## 로컬 개발 시작
 
 필요한 도구는 Node.js 22 이상, pnpm 10, Docker Desktop입니다.
 
