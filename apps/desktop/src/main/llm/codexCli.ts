@@ -137,7 +137,11 @@ const readDisabledFeatures = async ({
 }
 
 const isFeatureDisabled = ({ features, name }: { features: string; name: string }) =>
-  new RegExp(`^${name}\\s+\\S+\\s+false$`, 'm').test(features)
+  features.split(/\r?\n/).some((line) => {
+    const columns = line.trim().split(/\s+/)
+    // The stage column can contain spaces, for example "under development".
+    return columns.length >= 3 && columns[0] === name && columns.at(-1) === 'false'
+  })
 
 const assessSandboxSupport = ({ help, features }: { help: string; features: string }) => {
   const hasReadOnlySandbox = help.includes('--sandbox') && help.includes('read-only')
