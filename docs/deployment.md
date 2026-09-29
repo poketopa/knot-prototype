@@ -16,6 +16,8 @@ https://api.example.com/v1/auth/github/callback
 
 기존 호스트 Nginx가 80/443을 이미 사용한다면 [compose.ec2.host-proxy.yml](../compose.ec2.host-proxy.yml)을 사용합니다. 이 파일은 Caddy를 띄우지 않고 API만 `127.0.0.1:4310`에 공개합니다. PostgreSQL은 호스트 포트를 열지 않습니다.
 
+API의 분할 업로드 조각은 `knot-prototype-upload-spool` 볼륨에 보관합니다. API 컨테이너가 다시 시작돼도 완료된 조각을 이어받기 위한 임시 저장소이므로, 진행 중인 업로드가 있을 때는 이 볼륨을 삭제하지 마세요.
+
 ```nginx
 server {
     listen 443 ssl;

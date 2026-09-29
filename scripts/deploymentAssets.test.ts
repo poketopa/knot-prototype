@@ -235,6 +235,9 @@ describe('EC2 deployment assets', () => {
     expect(parsed.services.postgres.mem_limit).toBe(String(256 * 1024 * 1024))
     expect(parsed.services.api.mem_limit).toBe(String(384 * 1024 * 1024))
     expect(parsed.services.migrate.mem_limit).toBe(String(384 * 1024 * 1024))
+    expect(parsed.services.api.volumes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ target: '/app/var/prototype-storage', type: 'volume' })
+    ]))
   })
 
   it('has shell syntax-valid backup script', () => {

@@ -105,6 +105,8 @@ services:
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:?set GITHUB_CLIENT_SECRET}
     expose:
       - '4310'
+    volumes:
+      - knot-prototype-upload-spool:/app/var/prototype-storage
     healthcheck:
       test:
         [
@@ -118,5 +120,6 @@ services:
 
 volumes:
   knot-prototype-pg:
+  knot-prototype-upload-spool:
   knot-prototype-caddy-data:
   knot-prototype-caddy-config:

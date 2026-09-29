@@ -86,6 +86,8 @@ services:
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:?set GITHUB_CLIENT_SECRET}
     ports:
       - '127.0.0.1:4310:4310'
+    volumes:
+      - knot-prototype-upload-spool:/app/var/prototype-storage
     healthcheck:
       test:
         [
@@ -99,3 +101,4 @@ services:
 
 volumes:
   knot-prototype-pg:
+  knot-prototype-upload-spool:
