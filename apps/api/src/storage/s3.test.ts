@@ -12,6 +12,21 @@ import { describe, expect, it } from 'vitest'
 import { S3Storage, type S3StorageClient, type S3StorageResponse } from './s3.js'
 
 describe('S3Storage', () => {
+  it('accepts two GiB metadata and rejects larger uploads before spooling', async () => {
+    const client = new FakeS3Client([])
+    const storage = await createStorage(client)
+    const key = storage.keyFor('user-id', 'recording-id', 'artifact-id')
+    const sha256 = 'a'.repeat(64)
+
+    await expect(
+      storage.putStream(key, Readable.from([]), { sha256, byteLength: 2 * 1024 ** 3 })
+    ).rejects.toMatchObject({ code: 'ARTIFACT_CONTENT_HASH_MISMATCH' })
+    await expect(
+      storage.putStream(key, Readable.from([]), { sha256, byteLength: 2 * 1024 ** 3 + 1 })
+    ).rejects.toMatchObject({ code: 'ARTIFACT_CONTENT_TOO_LARGE' })
+    expect(client.commands).toHaveLength(0)
+  })
+
   it('uploads a verified spooled file with immutable S3 headers and verifies the remote checksum', async () => {
     const data = Buffer.from('hello')
     const expected = expectedFor(data)

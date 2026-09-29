@@ -26,7 +26,7 @@ export type S3StorageClient = {
 }
 
 const maxConcurrentSpools = 2
-const maxS3UploadBytes = 1024 * 1024 * 1024
+const maxS3UploadBytes = 2 * 1024 ** 3
 let activeSpools = 0
 
 export class S3Storage {

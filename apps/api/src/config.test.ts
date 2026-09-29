@@ -79,10 +79,13 @@ describe('loadConfig', () => {
     )
   })
 
-  it('caps spool size at one GiB per upload', () => {
-    expect(() => loadConfig({ ...productionEnv, MAX_UPLOAD_BYTES: String(2 * 1024 ** 3) })).toThrow(
-      'MAX_UPLOAD_BYTES_INVALID'
-    )
+  it('allows long WAV uploads up to two GiB', () => {
+    expect(
+      loadConfig({ ...productionEnv, MAX_UPLOAD_BYTES: String(2 * 1024 ** 3) }).maxUploadBytes
+    ).toBe(2 * 1024 ** 3)
+    expect(() =>
+      loadConfig({ ...productionEnv, MAX_UPLOAD_BYTES: String(2 * 1024 ** 3 + 1) })
+    ).toThrow('MAX_UPLOAD_BYTES_INVALID')
   })
   it('allows local loopback API and local database', () => {
     expect(loadConfig(baseEnv).host).toBe('127.0.0.1')

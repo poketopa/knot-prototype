@@ -33,7 +33,7 @@ export function loadConfig(env = process.env): AppConfig {
   const desktopScheme = env.DESKTOP_SCHEME ?? 'knot-prototype'
   const desktopCallbackPath = env.DESKTOP_CALLBACK_PATH ?? '/auth/callback'
   const jsonBodyLimitBytes = Number(env.JSON_BODY_LIMIT_BYTES ?? String(32 * 1024 * 1024))
-  const maxUploadBytes = Number(env.MAX_UPLOAD_BYTES ?? String(1024 * 1024 * 1024))
+  const maxUploadBytes = Number(env.MAX_UPLOAD_BYTES ?? String(2 * 1024 ** 3))
 
   if (!Number.isInteger(port) || port <= 0) {
     throw new Error('PORT_INVALID')
@@ -69,7 +69,11 @@ export function loadConfig(env = process.env): AppConfig {
   if (!Number.isFinite(jsonBodyLimitBytes) || jsonBodyLimitBytes <= 0) {
     throw new Error('JSON_BODY_LIMIT_BYTES_INVALID')
   }
-  if (!Number.isSafeInteger(maxUploadBytes) || maxUploadBytes <= 0 || maxUploadBytes > 1024 ** 3) {
+  if (
+    !Number.isSafeInteger(maxUploadBytes) ||
+    maxUploadBytes <= 0 ||
+    maxUploadBytes > 2 * 1024 ** 3
+  ) {
     throw new Error('MAX_UPLOAD_BYTES_INVALID')
   }
 
