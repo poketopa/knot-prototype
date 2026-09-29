@@ -89,7 +89,7 @@ KNOT_BUILD_API_BASE_URL=https://api.example.com/v1 \
 corepack pnpm build:mac:release
 ```
 
-`build:mac:release`는 코드 서명을 필수로 요구하고, 빌드 후 `codesign`, `stapler`, `spctl`을 실행합니다. 하나라도 실패하면 릴리스 파일을 게시하지 않습니다. `release:mac`도 검증된 파일을 준비하는 명령이며, GitHub 업로드는 검증 완료 후 별도로 수행합니다.
+`build:mac:release`는 코드 서명을 필수로 요구하고, 빌드 후 `codesign`, `stapler`, `spctl`을 실행합니다. 하나라도 실패하면 릴리스 파일을 게시하지 않습니다. `release:mac`도 검증된 파일을 준비하는 명령이며, GitHub 업로드는 검증 완료 후 별도로 수행합니다. 앱 내 업데이트에는 DMG 외에 빌드가 만든 macOS ZIP과 업데이트 메타데이터(`latest-mac.yml` 또는 해당 preview 채널의 YAML)도 같은 GitHub 릴리스에 첨부해야 합니다. 릴리스 태그와 앱 버전이 일치해야 합니다.
 
 기존 앱 파일만 검사하려면 저장소 루트에서 실행합니다.
 
