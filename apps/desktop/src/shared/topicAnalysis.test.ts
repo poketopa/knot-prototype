@@ -111,10 +111,24 @@ describe('assertTopicCatalogFits', () => {
 
 describe('splitTopicAnalysisUtterances', () => {
   it('발화 단위로만 나누고 모든 id를 보존한다', () => {
-    const chunks = splitTopicAnalysisUtterances({ utterances, budgetChars: 60 })
+    const chunks = splitTopicAnalysisUtterances({ utterances, budgetChars: 120 })
 
     expect(chunks.flat().map((utterance) => utterance.id)).toEqual(['u1', 'u2', 'u3'])
     chunks.forEach((chunk) => expect(chunk.length).toBeGreaterThan(0))
+  })
+
+  it('예산보다 긴 발화도 원문과 근거 id를 모두 보존해 나눈다', () => {
+    const original = { id: 'long', speakerLabel: '화자 1', text: '긴 발화입니다.🎙️'.repeat(200) }
+    const chunks = splitTopicAnalysisUtterances({ utterances: [original], budgetChars: 200 })
+    expect(chunks.length).toBeGreaterThan(1)
+    expect(
+      chunks
+        .flat()
+        .map((utterance) => utterance.text)
+        .join('')
+    ).toBe(original.text)
+    expect(chunks.flat().every((utterance) => utterance.id === original.id)).toBe(true)
+    expect(chunks.flat().every((utterance) => !/\uFFFD/.test(utterance.text))).toBe(true)
   })
 })
 

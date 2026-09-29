@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, matchPath, useLocation, useNavigate } from 'react-router'
+import UpdateBanner from '@renderer/modules/features/update/UpdateBanner'
 import { onRecordingState } from '@renderer/shared/api/events'
 import {
   getAuthStateApi,
@@ -28,6 +29,7 @@ export function AppShellLayout() {
   const isDocument = pathname === PATHS.home || !!matchPath(PATHS.documentDetail, pathname)
   const isHistory =
     pathname === PATHS.recordingHistory || !!matchPath(PATHS.meetingDetail, pathname)
+  const isSummary = pathname === PATHS.summaries || !!matchPath(PATHS.summaryDetail, pathname)
   const [auth, setAuth] = useState<PrototypeAuthState | null>(null)
   const [error, setError] = useState<string | null>(null)
   useEffect(() => {
@@ -76,6 +78,9 @@ export function AppShellLayout() {
             문서
           </Link>
           <NavLink to={PATHS.record}>녹음</NavLink>
+          <Link to={PATHS.summaries} aria-current={isSummary ? 'page' : undefined}>
+            정리
+          </Link>
           <Link to={PATHS.recordingHistory} aria-current={isHistory ? 'page' : undefined}>
             녹음 이력
           </Link>
@@ -105,6 +110,7 @@ export function AppShellLayout() {
           <button onClick={() => setError(null)}>닫기</button>
         </div>
       )}
+      <UpdateBanner />
       <main className={styles.main}>
         <Outlet />
       </main>

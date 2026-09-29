@@ -1,3 +1,4 @@
+import UpdateCheck from '@renderer/modules/features/update/UpdateCheck'
 import ModelDownloadSection from '@renderer/modules/widgets/model/ModelDownloadSection'
 import SummaryModelSection from '@renderer/modules/widgets/model/SummaryModelSection'
 import LlmSection from '@renderer/modules/widgets/setting/LlmSection'
@@ -21,6 +22,9 @@ export default function Settings() {
             </SettingGroup>
             {/* widgets는 widgets를 import하지 않으므로 로컬 모델 파일 행은 페이지가 슬롯으로 넘긴다 */}
             <LlmSection localModelSlot={<SummaryModelSection />} />
+            <SettingGroup title="업데이트">
+              <UpdateCheck />
+            </SettingGroup>
           </SettingsSection>
         </div>
       </PageToc>

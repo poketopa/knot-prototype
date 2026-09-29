@@ -17,6 +17,7 @@ import type {
   PrototypeChangedEvent,
   PrototypeDocumentDetail,
   PrototypeDocumentListItem,
+  PrototypeMeetingSummary,
   PrototypeProcessingItem,
   PrototypeTrackEventRequest,
   PrototypeTranscript
@@ -73,6 +74,7 @@ export const IPC = {
     login: 'prototype:login',
     logout: 'prototype:logout',
     listDocuments: 'prototype:documents:list',
+    listSummaries: 'prototype:summaries:list',
     getDocument: 'prototype:documents:get',
     readTranscript: 'prototype:artifacts:readTranscript',
     getProcessing: 'prototype:processing:get',
@@ -359,6 +361,7 @@ export type LoginPrototypeResponse = PrototypeAuthState
 export type LogoutPrototypeResponse = PrototypeAuthState
 
 export type ListPrototypeDocumentsResponse = PrototypeDocumentListItem[]
+export type ListPrototypeSummariesResponse = PrototypeMeetingSummary[]
 
 export interface GetPrototypeDocumentRequest {
   documentId: string

@@ -1,7 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import { getDb } from '../db/connection'
 import { messageOf, warn } from '../log'
-import { PrototypeApiError, prototypeRequest, prototypeUpload } from './apiClient'
+import {
+  PrototypeApiError,
+  prototypeRequest,
+  prototypeUpload,
+  type UploadDescriptor
+} from './apiClient'
 import { requirePrototypeUser, prototypeAuthState, isPrototypeAuthTransitioning } from './authState'
 import { artifactLocalPath } from './artifacts'
 import { emitPrototypeChanged } from './events'
@@ -158,17 +163,19 @@ const sendOutboxPayload = async ({
   if (kind === 'artifact-upload') {
     const id = readString({ payload, key: 'id' })
     assertArtifactMetadataSynced({ artifactId: id })
-    await prototypeRequest({
+    const descriptor = await prototypeRequest<UploadDescriptor>({
       method: 'POST',
       path: `/artifacts/${id}/upload`
     })
     await prototypeUpload({
-      path: `/artifacts/${id}/content`,
+      path: descriptor.url,
+      descriptor,
       localPath: artifactLocalPath({ artifactId: id })
     })
     await prototypeRequest({
       method: 'POST',
-      path: `/artifacts/${id}/complete`
+      path: `/artifacts/${id}/complete`,
+      timeoutMs: 10 * 60_000
     })
     markArtifactSynced({ id })
     return

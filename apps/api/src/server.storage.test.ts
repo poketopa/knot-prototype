@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { Readable } from 'node:stream'
+import { text } from 'node:stream/consumers'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { AppConfig } from './config.js'
@@ -7,6 +8,7 @@ import { sha256Hex } from './crypto.js'
 import type { Db } from './db.js'
 import { ApiError } from './errors.js'
 import { buildServer } from './server.js'
+import { ChunkUploadStorage } from './storage/chunks.js'
 import type { ArtifactStorage } from './storage/types.js'
 
 const userId = '00000000-0000-4000-8000-000000000001'
@@ -126,8 +128,15 @@ const fakeStorage = () =>
     stream: vi.fn(() => Readable.from(Buffer.from('stored bytes')))
   }) satisfies ArtifactStorage
 
-const appOf = ({ db, storage }: { db: QueryOnlyDb; storage: ArtifactStorage }) =>
-  buildServer({ config, db: db as Db, storage })
+const appOf = ({
+  db,
+  storage,
+  chunkStorage
+}: {
+  db: QueryOnlyDb
+  storage: ArtifactStorage
+  chunkStorage?: ChunkUploadStorage
+}) => buildServer({ config, db: db as Db, storage, chunkStorage })
 
 const fixtureOf = (overrides: Partial<ArtifactFixture> = {}): ArtifactFixture => {
   const content = Buffer.from('fixture wav bytes')
@@ -194,6 +203,64 @@ describe('artifact storage injection', () => {
     ])
   })
 
+  it('describes chunk upload progress and finalizes verified chunks through storage', async () => {
+    const content = Buffer.from('aaaabbbbcc')
+    const contentSha = sha256(content)
+    const artifact = fixtureOf({ sha256: contentSha, byteLength: content.byteLength })
+    const db = new FakeDb([artifact])
+    const storage = fakeStorage()
+    const chunkStorage = new ChunkUploadStorage('/tmp/knot-storage-test-chunks', 4)
+    vi.mocked(storage.verify).mockRejectedValueOnce(
+      new ApiError(409, 'ARTIFACT_CONTENT_HASH_MISMATCH', 'not stored yet')
+    )
+    vi.mocked(storage.putStream).mockImplementationOnce(async (key, input, expected) => {
+      expect(await text(input)).toBe('aaaabbbbcc')
+      return { key, ...expected }
+    })
+    const app = appOf({ db, storage, chunkStorage })
+
+    const descriptor = await app.inject({
+      method: 'POST',
+      url: `/v1/artifacts/${artifactId}/upload`,
+      headers: authHeader()
+    })
+    expect(descriptor.statusCode).toBe(200)
+    expect(descriptor.json()).toMatchObject({
+      mode: 'chunked',
+      version: 1,
+      chunkSize: 4,
+      byteLength: content.byteLength,
+      sha256: contentSha,
+      chunks: []
+    })
+
+    for (let index = 0; index < 3; index += 1) {
+      const chunk = content.subarray(index * 4, Math.min(index * 4 + 4, content.byteLength))
+      const response = await app.inject({
+        method: 'PUT',
+        url: `/v1/artifacts/${artifactId}/chunks/${index}`,
+        headers: {
+          ...authHeader(),
+          'content-type': 'application/octet-stream',
+          'content-length': String(chunk.byteLength),
+          'x-chunk-sha256': sha256(chunk)
+        },
+        payload: Readable.from(chunk)
+      })
+      expect(response.statusCode).toBe(200)
+    }
+
+    const complete = await app.inject({
+      method: 'POST',
+      url: `/v1/artifacts/${artifactId}/complete`,
+      headers: authHeader()
+    })
+
+    expect(complete.statusCode).toBe(200)
+    expect(storage.putStream).toHaveBeenCalledTimes(1)
+    expect(db.updates).toHaveLength(1)
+  })
+
   it('GET content awaits async storage.stream before sending bytes', async () => {
     const db = new FakeDb([fixtureOf({ uploadStatus: 'completed' })])
     const storage = fakeStorage()
@@ -229,9 +296,21 @@ describe('artifact storage injection', () => {
       url: `/v1/artifacts/${otherArtifactId}/content`,
       headers: authHeader()
     })
+    const otherOwnerChunk = await app.inject({
+      method: 'PUT',
+      url: `/v1/artifacts/${otherArtifactId}/chunks/0`,
+      headers: {
+        ...authHeader(),
+        'content-type': 'application/octet-stream',
+        'content-length': '5',
+        'x-chunk-sha256': sha256(Buffer.from('hello'))
+      },
+      payload: Readable.from(Buffer.from('hello'))
+    })
 
     expect(unauthorized.statusCode).toBe(401)
     expect(otherOwner.statusCode).toBe(404)
+    expect(otherOwnerChunk.statusCode).toBe(404)
     expect(storage.putStream).not.toHaveBeenCalled()
     expect(storage.verify).not.toHaveBeenCalled()
     expect(storage.stream).not.toHaveBeenCalled()

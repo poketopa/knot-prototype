@@ -4,7 +4,14 @@ import { cleanup, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { AppShellLayout } from './layout'
 
-vi.mock('@renderer/shared/api/events', () => ({ onRecordingState: () => () => {} }))
+vi.mock('@renderer/shared/api/events', () => ({
+  onRecordingState: () => () => {},
+  onUpdateAvailable: () => () => {}
+}))
+vi.mock('@renderer/shared/api/update', () => ({
+  downloadUpdateApi: vi.fn(),
+  installUpdateApi: vi.fn()
+}))
 vi.mock('@renderer/shared/api/prototype', () => ({
   getAuthStateApi: async () => ({
     isAuthenticated: true,
@@ -22,6 +29,7 @@ describe('AppShellLayout navigation', () => {
     ['/documents/doc-1', '문서'],
     ['/meetings/meeting-1', '녹음 이력'],
     ['/record', '녹음'],
+    ['/summaries/recording-1', '정리'],
     ['/settings', '설정']
   ])('keeps the parent menu active at %s', async (path, label) => {
     render(

@@ -25,7 +25,11 @@ export const checkUpdateApi = async () => {
  * await downloadUpdateApi()
  */
 export const downloadUpdateApi = async () => {
-  await window.api.update.download()
+  try {
+    await window.api.update.download()
+  } catch (caught) {
+    throw new Error(stripRemotePrefix(caught))
+  }
 }
 
 /**
@@ -35,5 +39,9 @@ export const downloadUpdateApi = async () => {
  * await installUpdateApi()
  */
 export const installUpdateApi = async () => {
-  await window.api.update.install()
+  try {
+    await window.api.update.install()
+  } catch (caught) {
+    throw new Error(stripRemotePrefix(caught))
+  }
 }

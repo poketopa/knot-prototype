@@ -11,7 +11,8 @@ import { enqueueOutbox } from './outbox'
 import { prototypeUserRoot, requirePrototypeUser } from './authState'
 import { prototypeRequest } from './apiClient'
 
-export type PrototypeArtifactKind = 'wav' | 'transcript' | 'ai_raw' | 'ai_analysis' | 'ai_partial'
+export type PrototypeArtifactKind =
+  'wav' | 'transcript' | 'ai_raw' | 'ai_analysis' | 'ai_partial' | 'meeting_summary'
 
 interface RegisterArtifactParams {
   recordingId: string

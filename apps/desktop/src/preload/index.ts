@@ -26,6 +26,7 @@ import {
   type GetRecordingStateResponse,
   type GetSettingsResponse,
   type ListPrototypeDocumentsResponse,
+  type ListPrototypeSummariesResponse,
   type LoginPrototypeResponse,
   type LogoutPrototypeResponse,
   type MergeSpeakersRequest,
@@ -168,6 +169,8 @@ const api = {
     logout: (): Promise<LogoutPrototypeResponse> => ipcRenderer.invoke(IPC.prototype.logout),
     listDocuments: (): Promise<ListPrototypeDocumentsResponse> =>
       ipcRenderer.invoke(IPC.prototype.listDocuments),
+    listSummaries: (): Promise<ListPrototypeSummariesResponse> =>
+      ipcRenderer.invoke(IPC.prototype.listSummaries),
     getDocument: (payload: GetPrototypeDocumentRequest): Promise<GetPrototypeDocumentResponse> =>
       ipcRenderer.invoke(IPC.prototype.getDocument, payload),
     readTranscript: (

@@ -272,6 +272,23 @@ describePg('prototype API with real PostgreSQL and limited runtime role', () => 
     expect(aV1Again.rows[0]).toEqual(aV1.rows[0])
   })
 
+  it('stores one meeting-wide summary as a JSON artifact', async () => {
+    const recordingId = '00000000-0000-4000-8000-000000000111'
+    const artifactId = '00000000-0000-4000-8000-000000000211'
+    const summary = {
+      schemaVersion: 1,
+      headline: '출시 범위를 정했습니다.',
+      body: '회의에서 출시 범위와 다음 확인 일정을 논의했습니다.'
+    }
+    await putRecording(recordingId, '2026-09-30T01:00:00.000Z')
+    await putJsonArtifact(recordingId, artifactId, 'meeting_summary', summary)
+    const result = await migratorDb.query<{ raw_content: unknown }>(
+      'SELECT raw_content FROM artifacts WHERE user_id = $1 AND id = $2',
+      [userId, artifactId]
+    )
+    expect(result.rows[0]?.raw_content).toEqual(summary)
+  })
+
   it('keeps concurrent publish idempotent and rolls back invalid topic references', async () => {
     const recordingId = '00000000-0000-4000-8000-000000000601'
     const transcriptId = '00000000-0000-4000-8000-000000000602'
@@ -594,7 +611,7 @@ describePg('prototype API with real PostgreSQL and limited runtime role', () => 
   async function putJsonArtifact(
     recordingId: string,
     artifactId: string,
-    kind: 'transcript' | 'ai_analysis',
+    kind: 'transcript' | 'ai_analysis' | 'meeting_summary',
     content: unknown,
     bearer = token
   ) {

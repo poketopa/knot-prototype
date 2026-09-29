@@ -4,6 +4,7 @@ export const getAuthStateApi = () => window.api.prototype.authState()
 export const loginApi = () => window.api.prototype.login()
 export const logoutApi = () => window.api.prototype.logout()
 export const getDocumentsApi = () => window.api.prototype.listDocuments()
+export const getSummariesApi = () => window.api.prototype.listSummaries()
 export const getDocumentApi = (documentId: string) =>
   window.api.prototype.getDocument({ documentId })
 export const getTranscriptApi = (recordingId: string) =>

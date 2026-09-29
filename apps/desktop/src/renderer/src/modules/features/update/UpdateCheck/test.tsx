@@ -64,4 +64,24 @@ describe('UpdateCheck', () => {
     expect(screen.getByText(/네트워크 연결을 확인해 주세요/)).toBeTruthy()
     expect(screen.getByRole('button', { name: '지금 확인' })).toBeTruthy()
   })
+
+  it('처리 중 설치가 막히면 내려받은 버전과 안내를 보여준다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(checkUpdateApi).mockResolvedValue({
+      currentVersion: '0.3.0-preview.5',
+      availableVersion: '0.3.0-preview.6'
+    })
+    vi.mocked(downloadUpdateApi).mockResolvedValue(undefined)
+    vi.mocked(installUpdateApi).mockRejectedValue(
+      new Error('녹음이나 AI 처리가 끝난 뒤 설치해 주세요. 내려받은 업데이트는 유지됩니다.')
+    )
+    render(<UpdateCheck />)
+
+    await user.click(screen.getByRole('button', { name: '지금 확인' }))
+    await user.click(screen.getByRole('button', { name: '받기' }))
+    await user.click(screen.getByRole('button', { name: '다시 시작해 설치' }))
+
+    expect(screen.getByText(/녹음이나 AI 처리가 끝난 뒤 설치해 주세요/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: '다시 시도' })).toBeTruthy()
+  })
 })

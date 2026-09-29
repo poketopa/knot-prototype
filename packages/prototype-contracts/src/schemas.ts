@@ -65,7 +65,10 @@ export const artifactPutRequestSchema = {
   type: 'object',
   required: ['kind', 'sha256', 'byteLength'],
   properties: {
-    kind: { type: 'string', enum: ['wav', 'transcript', 'ai_raw', 'ai_analysis', 'ai_partial'] },
+    kind: {
+      type: 'string',
+      enum: ['wav', 'transcript', 'ai_raw', 'ai_analysis', 'ai_partial', 'meeting_summary']
+    },
     attemptId: { type: 'string', minLength: 1, maxLength: 128 },
     content: {},
     sha256,

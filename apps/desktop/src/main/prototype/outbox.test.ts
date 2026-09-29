@@ -2,7 +2,13 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-const state = vi.hoisted(() => ({ root: '', paused: false, authenticated: true, request: vi.fn() }))
+const state = vi.hoisted(() => ({
+  root: '',
+  paused: false,
+  authenticated: true,
+  request: vi.fn(),
+  upload: vi.fn()
+}))
 vi.mock('electron', () => ({ BrowserWindow: { getAllWindows: () => [] } }))
 vi.mock('./authState', () => ({
   requirePrototypeUser: () => ({ id: 'owner-a' }),
@@ -13,7 +19,7 @@ vi.mock('./authState', () => ({
 vi.mock('./auth', () => ({ flushPrototypeRevocations: vi.fn() }))
 vi.mock('./apiClient', () => ({
   prototypeRequest: state.request,
-  prototypeUpload: vi.fn(),
+  prototypeUpload: state.upload,
   PrototypeApiError: class extends Error {
     status: number
     retryable: boolean
@@ -35,6 +41,8 @@ beforeEach(async () => {
   state.authenticated = true
   state.request.mockReset()
   state.request.mockResolvedValue({})
+  state.upload.mockReset()
+  state.upload.mockResolvedValue({})
   vi.useFakeTimers()
 })
 afterEach(async () => {
@@ -92,6 +100,44 @@ it('녹음 시작 이벤트보다 녹음 메타데이터를 먼저 전송한다'
   enqueueOutbox({ kind: 'recording', payload: { id: 'recording-a', title: '회의' } })
   await drainPrototypeOutbox()
   expect(state.request.mock.calls[0][0].path).toBe('/recordings/recording-a')
+})
+it('WAV 업로드 descriptor를 사용하고 complete 요청은 긴 타임아웃으로 기다린다', async () => {
+  state.request.mockResolvedValueOnce({
+    method: 'PUT',
+    url: '/artifacts/artifact-a/content',
+    mode: 'chunked',
+    chunkSize: 8,
+    chunkUrlTemplate: '/artifacts/artifact-a/chunks/{index}',
+    byteLength: 8,
+    chunks: []
+  })
+  getDb()
+    .prepare(
+      `INSERT INTO prototype_artifacts (
+         id, owner_id, recording_id, kind, local_path, content_json, sha256, byte_length,
+         sync_status, created_at
+       )
+       VALUES ('artifact-a', 'owner-a', 'recording-a', 'wav', '/tmp/audio.wav', NULL, 'sha', 8,
+         'pending', 1)`
+    )
+    .run()
+  enqueueOutbox({
+    kind: 'artifact-upload',
+    payload: { id: 'artifact-a', recordingId: 'recording-a', kind: 'wav' }
+  })
+
+  await drainPrototypeOutbox()
+
+  expect(state.upload).toHaveBeenCalledWith({
+    path: '/artifacts/artifact-a/content',
+    descriptor: expect.objectContaining({ mode: 'chunked', chunkSize: 8 }),
+    localPath: '/tmp/audio.wav'
+  })
+  expect(state.request.mock.calls[1][0]).toMatchObject({
+    method: 'POST',
+    path: '/artifacts/artifact-a/complete',
+    timeoutMs: 10 * 60_000
+  })
 })
 it('서버 이벤트 단계 계약으로 변환하고 임의 metadata를 전송하지 않는다', async () => {
   enqueueOutbox({

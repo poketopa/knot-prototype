@@ -53,7 +53,8 @@ export type RecordingResponse = {
   publishedAnalysisId: Uuid | null
 }
 
-export type ArtifactKind = 'wav' | 'transcript' | 'ai_raw' | 'ai_analysis' | 'ai_partial'
+export type ArtifactKind =
+  'wav' | 'transcript' | 'ai_raw' | 'ai_analysis' | 'ai_partial' | 'meeting_summary'
 
 export type ArtifactPutRequest = {
   kind: ArtifactKind

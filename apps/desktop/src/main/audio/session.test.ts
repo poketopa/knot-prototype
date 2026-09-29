@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
@@ -7,6 +7,10 @@ import { SAMPLE_RATE_HZ } from '@shared/audio'
 let userDataDir: string
 let finishWriterOpen: (() => void) | null = null
 let failWriterOpen: ((error: Error) => void) | null = null
+
+vi.mock('electron', () => ({
+  powerSaveBlocker: { start: vi.fn().mockReturnValue(42), stop: vi.fn() }
+}))
 
 vi.mock('../prototype/authState', () => ({
   prototypeUserRoot: () => path.join(userDataDir, 'prototype', 'users', 'owner-1')
@@ -80,5 +84,71 @@ describe('recording session', () => {
 
     await expect(started).rejects.toThrow('writer failed')
     expect(isRecordingBusy()).toBe(false)
+  })
+
+  it('녹음 중에는 자동 잠자기를 막고 원본 저장 후 해제한다', async () => {
+    const { powerSaveBlocker } = await import('electron')
+    const { findMeeting } = await import('../db/meetings')
+    vi.mocked(findMeeting).mockReturnValue({
+      id: 'meeting',
+      title: '회의',
+      createdAt: Date.now(),
+      durationSec: 2,
+      status: 'recording'
+    })
+    const { startRecording, stopRecording } = await import('./session')
+    const started = startRecording({ sampleRate: SAMPLE_RATE_HZ })
+    await vi.waitFor(() => expect(finishWriterOpen).toBeTypeOf('function'))
+    expect(powerSaveBlocker.start).not.toHaveBeenCalled()
+    finishWriterOpen?.()
+    const { meetingId } = await started
+    expect(powerSaveBlocker.start).toHaveBeenCalledWith('prevent-app-suspension')
+    expect(powerSaveBlocker.stop).not.toHaveBeenCalled()
+    await stopRecording({ meetingId })
+    expect(powerSaveBlocker.stop).toHaveBeenCalledWith(42)
+  })
+
+  it('경과 시간과 실제 저장된 음성이 다르면 원본 길이를 유지하고 진단을 보관한다', async () => {
+    const startedAt = 1_000_000
+    const now = vi.spyOn(Date, 'now').mockReturnValue(startedAt)
+    const { findMeeting, updateMeetingDuration } = await import('../db/meetings')
+    vi.mocked(findMeeting).mockReturnValue({
+      id: 'meeting',
+      title: '회의',
+      createdAt: startedAt,
+      durationSec: 2,
+      status: 'recording'
+    })
+    const { startRecording, stopRecording, setRecordingStateListener } = await import('./session')
+    const listener = vi.fn()
+    setRecordingStateListener(listener)
+    const started = startRecording({ sampleRate: SAMPLE_RATE_HZ })
+    await vi.waitFor(() => expect(finishWriterOpen).toBeTypeOf('function'))
+    finishWriterOpen?.()
+    const { meetingId } = await started
+    now.mockReturnValue(startedAt + 150 * 60_000)
+    await stopRecording({ meetingId })
+    expect(updateMeetingDuration).toHaveBeenCalledWith({ meetingId, durationSec: 2 })
+    const audit = JSON.parse(
+      await readFile(
+        path.join(
+          userDataDir,
+          'prototype',
+          'users',
+          'owner-1',
+          'recordings',
+          `${meetingId}.wav.capture.json`
+        ),
+        'utf8'
+      )
+    )
+    expect(audit).toMatchObject({ elapsedSec: 9000, capturedSec: 2, warning: expect.any(String) })
+    expect(listener).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        stoppedMeetingId: meetingId,
+        errorMessage: expect.stringContaining('음성 길이')
+      })
+    )
+    now.mockRestore()
   })
 })

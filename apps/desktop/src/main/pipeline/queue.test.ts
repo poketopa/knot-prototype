@@ -21,11 +21,20 @@ vi.mock('../prototype/authState', () => ({
 
 vi.mock('./run', () => ({ runPipeline: vi.fn() }))
 vi.mock('../summary/run', () => ({ runTopicAnalysis: vi.fn() }))
+vi.mock('../summary/meetingSummary', () => ({ createMeetingSummary: vi.fn() }))
 vi.mock('../glossary/draft', () => ({ runGlossaryDraft: vi.fn() }))
 vi.mock('../prototype/documents', () => ({ listPrototypeDocuments: vi.fn(() => []) }))
+vi.mock('../prototype/meetingSummaries', () => ({ persistMeetingSummary: vi.fn() }))
+vi.mock('../prototype/artifacts', () => ({
+  findPrototypeArtifact: vi.fn(() => undefined),
+  preserveAiFailureArtifact: vi.fn(async () => undefined),
+  preserveTopicAnalysisArtifacts: vi.fn(),
+  preserveTranscriptArtifact: vi.fn()
+}))
 describe('pipeline queue checkpoints', () => {
   beforeEach(async () => {
     vi.resetModules()
+    vi.clearAllMocks()
     userDataDir = await mkdtemp(path.join(os.tmpdir(), 'meeting-stt-prototype-queue-'))
   })
 
@@ -137,4 +146,52 @@ describe('pipeline queue checkpoints', () => {
     expect(db.prepare('SELECT COUNT(*) AS count FROM prototype_jobs').get()).toEqual({ count: 0 })
     expect(db.prepare('SELECT COUNT(*) AS count FROM prototype_outbox').get()).toEqual({ count: 0 })
   })
+
+  it.each(['pipeline', 'summary'] as const)(
+    'deduplicates queued and running %s work',
+    async (kind) => {
+      const { getDb } = await import('../db/connection')
+      const { runPipeline } = await import('./run')
+      const { runTopicAnalysis } = await import('../summary/run')
+      const { runGlossaryDraft } = await import('../glossary/draft')
+      const { enqueueGlossaryDraft, enqueuePipelineJob, enqueueSummaryJob, isPipelineQueueBusy } =
+        await import('./queue')
+      getDb()
+        .prepare(
+          `INSERT INTO meetings (id, owner_id, title, created_at, duration_sec, status, audio_path)
+      VALUES ('meeting-dedupe', 'owner-1', '회의', 1, 9000, 'done', '/tmp/meeting.wav')`
+        )
+        .run()
+      let releaseGlossary!: (value: string[]) => void
+      vi.mocked(runGlossaryDraft).mockReturnValue(
+        new Promise((resolve) => {
+          releaseGlossary = resolve
+        })
+      )
+      let rejectWork!: (error: Error) => void
+      const work = new Promise<never>((_resolve, reject) => {
+        rejectWork = reject
+      })
+      if (kind === 'pipeline') vi.mocked(runPipeline).mockReturnValue(work)
+      else vi.mocked(runTopicAnalysis).mockReturnValue(work)
+      const glossary = enqueueGlossaryDraft({ teamDescription: 'test' })
+      const enqueue = kind === 'pipeline' ? enqueuePipelineJob : enqueueSummaryJob
+      enqueue({ meetingId: 'meeting-dedupe' })
+      enqueue({ meetingId: 'meeting-dedupe' })
+      releaseGlossary([])
+      await glossary
+      const run = kind === 'pipeline' ? runPipeline : runTopicAnalysis
+      await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(1))
+      if (kind === 'summary') {
+        expect(
+          getDb().prepare("SELECT status, stage FROM prototype_jobs WHERE kind='ai'").get()
+        ).toEqual({ status: 'running', stage: 'summarizing' })
+      }
+      enqueue({ meetingId: 'meeting-dedupe' })
+      enqueue({ meetingId: 'meeting-dedupe' })
+      rejectWork(new Error('injected processing failure'))
+      await vi.waitFor(() => expect(isPipelineQueueBusy()).toBe(false))
+      expect(run).toHaveBeenCalledTimes(1)
+    }
+  )
 })

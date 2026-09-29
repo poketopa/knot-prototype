@@ -1,12 +1,30 @@
 import { randomUUID } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import type { PrototypeProcessingItem, PrototypeProcessingStage } from '@shared/prototype'
 import { getDb } from '../db/connection'
 import { findMeeting, listMeetings } from '../db/meetings'
-import { requirePrototypeUser } from './authState'
+import { prototypeUserRoot, requirePrototypeUser } from './authState'
 import { emitPrototypeChanged } from './events'
 
 type PrototypeJobKind = 'transcript' | 'ai' | 'publish' | 'sync'
 type PrototypeJobStatus = 'pending' | 'running' | 'succeeded' | 'failed'
+
+const recordingWarningOf = (recordingId: string) => {
+  if (!/^[a-zA-Z0-9-]+$/.test(recordingId)) return undefined
+  try {
+    const audit: unknown = JSON.parse(
+      readFileSync(
+        path.join(prototypeUserRoot(), 'recordings', `${recordingId}.wav.capture.json`),
+        'utf8'
+      )
+    )
+    if (typeof audit !== 'object' || audit === null || !('warning' in audit)) return undefined
+    return typeof audit.warning === 'string' ? audit.warning.slice(0, 250) : undefined
+  } catch {
+    return undefined
+  }
+}
 
 interface UpsertPrototypeJobParams {
   recordingId: string
@@ -117,6 +135,16 @@ export const listPrototypeProcessing = () => {
     count: number
   }>
   const syncedArtifacts = new Map<string, Set<string>>()
+  const transcripts = new Set(
+    (
+      getDb()
+        .prepare(
+          `SELECT DISTINCT u.meeting_id FROM utterances u
+           JOIN meetings m ON m.id = u.meeting_id WHERE m.owner_id = @ownerId`
+        )
+        .all({ ownerId: owner.id }) as Array<{ meeting_id: string }>
+    ).map((row) => row.meeting_id)
+  )
   for (const row of syncedArtifactRows) {
     const current = syncedArtifacts.get(row.recording_id) ?? new Set<string>()
     current.add(row.kind)
@@ -130,10 +158,18 @@ export const listPrototypeProcessing = () => {
 
   return [...meetings.values()].map((meeting): PrototypeProcessingItem => {
     const jobs = byRecording.get(meeting.id) ?? []
+    const localJobs = jobs.filter((job) => job.kind === 'transcript' || job.kind === 'ai')
     const failed = jobs.find((job) => job.status === 'failed')
     const running = jobs.find((job) => job.status === 'running')
     const pending = jobs.find((job) => job.status === 'pending')
-    const active = failed ?? running ?? pending ?? jobs[0]
+    const active =
+      localJobs.find((job) => job.status === 'running') ??
+      localJobs.find((job) => job.status === 'failed') ??
+      localJobs.find((job) => job.status === 'pending') ??
+      failed ??
+      running ??
+      pending ??
+      jobs[0]
     const status: PrototypeJobStatus =
       active?.status ??
       (meeting.status === 'error' ? 'failed' : meeting.status === 'done' ? 'succeeded' : 'pending')
@@ -144,6 +180,19 @@ export const listPrototypeProcessing = () => {
     const requiredArtifactsSynced = ['wav', 'transcript', 'ai_analysis'].every((kind) =>
       artifactKinds.has(kind)
     )
+    const saved =
+      meeting.status === 'done' &&
+      requiredJobsSucceeded &&
+      requiredArtifactsSynced &&
+      !unsynced.has(meeting.id)
+    const succeeded = (kind: PrototypeJobKind) =>
+      jobs.some((job) => job.kind === kind && job.status === 'succeeded')
+    const completedStages: NonNullable<PrototypeProcessingItem['completedStages']> = []
+    if (meeting.status !== 'recording' && meeting.durationSec > 0) completedStages.push('recording')
+    if (succeeded('transcript')) completedStages.push('transcribing')
+    if (succeeded('ai')) completedStages.push('summarizing')
+    if (saved) completedStages.push('syncing')
+    const syncError = jobs.find((job) => job.kind === 'sync' && job.last_error)?.last_error
     return {
       meetingId: meeting.id,
       title: meeting.title,
@@ -157,12 +206,13 @@ export const listPrototypeProcessing = () => {
             : meeting.status === 'error'
               ? 'error'
               : 'done'),
-      ...(active?.last_error ? { error: active.last_error } : {}),
-      saved:
-        meeting.status === 'done' &&
-        requiredJobsSucceeded &&
-        requiredArtifactsSynced &&
-        !unsynced.has(meeting.id)
+      ...(active?.last_error && active.kind !== 'sync' ? { error: active.last_error } : {}),
+      ...(syncError ? { syncError } : {}),
+      completedStages,
+      hasTranscript: succeeded('transcript') || transcripts.has(meeting.id),
+      canRetry: Boolean(failed || syncError),
+      recordingWarning: recordingWarningOf(meeting.id),
+      saved
     }
   })
 }
@@ -175,7 +225,9 @@ export const retryPrototypeProcessing = ({ meetingId }: { meetingId: string }) =
   getDb()
     .prepare(
       `UPDATE prototype_jobs
-       SET status = 'pending', last_error = NULL, next_retry_at = 0, updated_at = @updatedAt
+       SET status = 'pending', last_error = NULL, next_retry_at = 0, updated_at = @updatedAt,
+           stage = CASE kind WHEN 'transcript' THEN 'transcribing' WHEN 'ai' THEN 'summarizing'
+                   WHEN 'publish' THEN 'publishing' ELSE 'syncing' END
        WHERE owner_id = @ownerId AND recording_id = @recordingId AND status = 'failed'`
     )
     .run({ ownerId: owner.id, recordingId: meetingId, updatedAt: Date.now() })
@@ -183,7 +235,7 @@ export const retryPrototypeProcessing = ({ meetingId }: { meetingId: string }) =
     `UPDATE prototype_outbox
      SET status = 'pending', next_retry_at = 0, last_error = NULL
      WHERE owner_id = @ownerId
-       AND status = 'failed'
+       AND status IN ('failed', 'pending')
        AND kind != 'events'
        AND (
          json_extract(payload_json, '$.recordingId') = @recordingId
@@ -222,7 +274,7 @@ export const retryPrototypeJobKinds = ({ meetingId }: { meetingId: string }) => 
     .prepare(
       `SELECT kind
        FROM prototype_jobs
-       WHERE owner_id = @ownerId AND recording_id = @recordingId AND status = 'pending'`
+       WHERE owner_id = @ownerId AND recording_id = @recordingId AND status = 'failed'`
     )
     .all({ ownerId: owner.id, recordingId: meetingId }) as Array<{ kind: PrototypeJobKind }>
 }

@@ -17,7 +17,7 @@ import {
 import { closeDb } from './db/connection'
 import { recoverInterruptedRecordings } from './audio/recovery'
 import { failStaleMeetings } from './db/meetings'
-import { getAppSettings, getWhisperModelId } from './db/settings'
+import { getWhisperModelId } from './db/settings'
 import { registerIpcHandlers } from './ipc/handlers'
 import { error as logError, info, messageOf, warn } from './log'
 import { setMeetingsChangedListener } from './meetingsChanged'
@@ -43,6 +43,7 @@ import {
 } from './prototype/artifacts'
 import { prototypeUserDataPath } from './prototype/config'
 import { trackPrototypeEvent } from './prototype/events'
+import { backfillMeetingSummaries } from './prototype/meetingSummaries'
 import { checkForUpdates } from './updater'
 import { createMainWindow, markMainWindowQuitting, showMainWindow } from './windows/main'
 import { registerGlobalShortcuts, unregisterGlobalShortcuts } from './windows/shortcuts'
@@ -94,11 +95,10 @@ const drainPendingOpenUrls = () => {
 }
 
 /**
- * 설정에서 켠 사용자만, 창이 뜬 직후 한 번 확인한다. 새 버전이 있으면 알리기만 하고
- * 내려받기는 사용자가 배너에서 요청한다 (references/distribution.md 7절).
+ * 창이 뜬 직후 새 버전을 한 번 확인한다. 내려받기와 설치는 사용자가 요청한다.
  */
 const notifyUpdateIfAvailable = async () => {
-  const version = await checkForUpdates({ isEnabled: getAppSettings().isUpdateCheckEnabled })
+  const version = await checkForUpdates()
   if (!version) return
 
   const event: UpdateAvailableEvent = { version }
@@ -111,6 +111,7 @@ const resumePrototypeUserWork = async () => {
   setupPrototypeShell()
   recoverMissingArtifactOutbox()
   await recoverTopicAttemptSpoolArtifacts()
+  await backfillMeetingSummaries()
   recoverQueuedPrototypeJobs()
   void drainPrototypeOutbox()
   void flushPrototypeRevocations()

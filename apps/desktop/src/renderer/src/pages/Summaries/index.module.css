@@ -1,0 +1,119 @@
+.section {
+  width: min(980px, calc(100% - 2 * var(--space-6)));
+  margin: var(--space-6) auto;
+  padding-bottom: var(--space-6);
+}
+.heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-5);
+  margin-bottom: var(--space-6);
+}
+.heading h1,
+.detail h1 {
+  margin: 0;
+  font-size: var(--font-title);
+}
+.heading p,
+.meta,
+.list small {
+  color: var(--color-text-muted);
+}
+.heading p {
+  margin: var(--space-2) 0 0;
+}
+.primary {
+  padding: var(--space-3) var(--space-5);
+  background: var(--color-text);
+  color: var(--color-text-inverse);
+  border-radius: var(--radius-lg);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+.list li + li {
+  border-top: 1px solid var(--color-divider);
+}
+.list a {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-5);
+  text-decoration: none;
+}
+.list a:hover {
+  background: var(--color-surface-hover);
+}
+.list a span:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.list strong {
+  overflow-wrap: anywhere;
+}
+.state {
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+.detail {
+  margin-top: var(--space-5);
+  padding: var(--space-6);
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+}
+.back {
+  color: var(--color-text-muted);
+}
+.eyebrow {
+  color: var(--color-text-muted);
+}
+.meta {
+  margin: var(--space-3) 0 var(--space-6);
+}
+.highlight {
+  padding: var(--space-5);
+  background: var(--color-sidebar);
+  border-radius: var(--radius-lg);
+}
+.highlight h2,
+.detail h2 {
+  font-size: var(--font-lg);
+}
+.highlight p,
+.body {
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+.message {
+  padding: var(--space-5);
+  background: var(--color-sidebar);
+  border-radius: var(--radius-lg);
+}
+.transcript {
+  margin-top: var(--space-6);
+}
+.transcript > button {
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+@media (max-width: 650px) {
+  .heading,
+  .list a {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

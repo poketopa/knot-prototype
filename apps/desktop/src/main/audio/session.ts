@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { powerSaveBlocker } from 'electron'
 import path from 'node:path'
 import { rmsOf, SAMPLE_RATE_HZ } from '@shared/audio'
 import type { RecordingStateEvent } from '@shared/ipc'
@@ -29,6 +30,7 @@ interface RecordingSession {
   audioPath: string
   writer: WavWriter
   level: number
+  sleepBlockerId: number
 }
 
 /**
@@ -100,7 +102,14 @@ export const startRecording = async ({ sampleRate }: { sampleRate: number }) => 
     await mkdir(recordingsDir(), { recursive: true })
     const writer = await createWavWriter({ filePath: audioPath })
     insertMeeting({ id: meetingId, title: defaultTitle(createdAt), createdAt, audioPath })
-    session = { meetingId, startedAt: createdAt, audioPath, writer, level: 0 }
+    session = {
+      meetingId,
+      startedAt: createdAt,
+      audioPath,
+      writer,
+      level: 0,
+      sleepBlockerId: powerSaveBlocker.start('prevent-app-suspension')
+    }
     info(`녹음 시작 ${meetingId}`)
     trackPrototypeEvent({ eventType: 'recording_started', recordingId: meetingId })
     publish()
@@ -138,9 +147,29 @@ export const appendRecordingChunk = async ({
 export const stopRecording = async ({ meetingId }: { meetingId: string }) => {
   const active = sessionOf(meetingId)
   const { durationSec } = await active.writer.finalize()
+  powerSaveBlocker.stop(active.sleepBlockerId)
   session = null
   updateMeetingDuration({ meetingId, durationSec })
   const endedAt = Date.now()
+  const elapsedSec = Math.max(0, (endedAt - active.startedAt) / 1000)
+  const missingAudioSec = Math.max(0, elapsedSec - durationSec)
+  const recordingWarning =
+    missingAudioSec > Math.max(10, elapsedSec * 0.01)
+      ? `녹음 경과 시간과 저장된 음성 길이가 약 ${Math.round(missingAudioSec / 60)}분 차이 납니다. 잠자기나 마이크 중단 여부를 확인해 주세요. 저장된 원본은 보관합니다.`
+      : undefined
+  // 원본을 바꾸지 않고 시간 차이를 남긴다. 실제로 입력되지 않은 음성을 복구한 것으로 표시하지 않는다.
+  await writeFile(
+    `${active.audioPath}.capture.json`,
+    JSON.stringify({
+      schemaVersion: 1,
+      startedAt: active.startedAt,
+      endedAt,
+      elapsedSec,
+      capturedSec: durationSec,
+      ...(recordingWarning ? { warning: recordingWarning } : {})
+    }),
+    { flag: 'wx' }
+  ).catch((caught: unknown) => warn(`녹음 시간 진단 저장 실패 ${meetingId}: ${String(caught)}`))
   const meetingBeforeProcessing = findMeeting({ meetingId })
   if (!meetingBeforeProcessing) throw new Error('회의 정보를 찾을 수 없습니다')
   enqueueOutbox({
@@ -175,7 +204,10 @@ export const stopRecording = async ({ meetingId }: { meetingId: string }) => {
     enqueuePipelineJob({ meetingId })
   }
 
-  publish({ stoppedMeetingId: meetingId })
+  publish({
+    stoppedMeetingId: meetingId,
+    ...(recordingWarning ? { errorMessage: recordingWarning } : {})
+  })
   trackPrototypeEvent({
     eventType: 'recording_finished',
     recordingId: meetingId,

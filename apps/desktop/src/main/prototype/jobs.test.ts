@@ -188,15 +188,14 @@ describe('prototype processing jobs', () => {
        )`
     ).run()
 
+    expect(retryPrototypeJobKinds({ meetingId: 'meeting-3' })).toEqual([{ kind: 'ai' }])
     retryPrototypeProcessing({ meetingId: 'meeting-3' })
 
     const outbox = db
       .prepare('SELECT status, last_error, next_retry_at FROM prototype_outbox WHERE id = ?')
       .get('outbox-failed') as { status: string; last_error: string | null; next_retry_at: number }
     expect(outbox).toEqual({ status: 'pending', last_error: null, next_retry_at: 0 })
-    expect(retryPrototypeJobKinds({ meetingId: 'meeting-3' })).toEqual(
-      expect.arrayContaining([{ kind: 'ai' }, { kind: 'sync' }])
-    )
+    expect(retryPrototypeJobKinds({ meetingId: 'meeting-3' })).toEqual([])
   })
 
   it('does not create sync work for analytics-only outbox failures', async () => {
@@ -229,5 +228,131 @@ describe('prototype processing jobs', () => {
     }
     expect(outbox).toEqual({ status: 'failed', last_error: 'offline', next_retry_at: 999 })
     expect(retryPrototypeJobKinds({ meetingId: 'meeting-4' })).toEqual([])
+  })
+
+  it('keeps running local AI visible alongside a storage failure and retries only storage', async () => {
+    const { getDb } = await import('../db/connection')
+    const {
+      listPrototypeProcessing,
+      retryPrototypeProcessing,
+      retryPrototypeJobKinds,
+      upsertPrototypeJob
+    } = await import('./jobs')
+    const db = getDb()
+    db.prepare(
+      `INSERT INTO meetings (id, owner_id, title, created_at, duration_sec, status, audio_path)
+      VALUES ('meeting-5', 'owner-1', '회의 5', 1, 9000, 'done', '/tmp/meeting.wav')`
+    ).run()
+    upsertPrototypeJob({
+      recordingId: 'meeting-5',
+      kind: 'transcript',
+      status: 'succeeded',
+      stage: 'done'
+    })
+    upsertPrototypeJob({
+      recordingId: 'meeting-5',
+      kind: 'ai',
+      status: 'running',
+      stage: 'summarizing'
+    })
+    upsertPrototypeJob({
+      recordingId: 'meeting-5',
+      kind: 'sync',
+      status: 'failed',
+      stage: 'syncing',
+      error: 'HTTP 413'
+    })
+    expect(listPrototypeProcessing()[0]).toMatchObject({
+      status: 'running',
+      stage: 'summarizing',
+      syncError: 'HTTP 413',
+      completedStages: ['recording', 'transcribing'],
+      hasTranscript: true,
+      canRetry: true
+    })
+    expect(retryPrototypeJobKinds({ meetingId: 'meeting-5' })).toEqual([{ kind: 'sync' }])
+    retryPrototypeProcessing({ meetingId: 'meeting-5' })
+    expect(db.prepare("SELECT status, stage FROM prototype_jobs WHERE kind='ai'").get()).toEqual({
+      status: 'running',
+      stage: 'summarizing'
+    })
+  })
+
+  it('preserves completed recording and transcription indicators when AI fails', async () => {
+    const { getDb } = await import('../db/connection')
+    const { listPrototypeProcessing, upsertPrototypeJob } = await import('./jobs')
+    getDb()
+      .prepare(
+        `INSERT INTO meetings (id, owner_id, title, created_at, duration_sec, status, audio_path)
+      VALUES ('meeting-6', 'owner-1', '회의 6', 1, 9000, 'done', '/tmp/meeting.wav')`
+      )
+      .run()
+    upsertPrototypeJob({
+      recordingId: 'meeting-6',
+      kind: 'transcript',
+      status: 'succeeded',
+      stage: 'done'
+    })
+    upsertPrototypeJob({
+      recordingId: 'meeting-6',
+      kind: 'ai',
+      status: 'failed',
+      stage: 'error',
+      error: 'invalid JSON'
+    })
+    expect(listPrototypeProcessing()[0]).toMatchObject({
+      status: 'failed',
+      stage: 'error',
+      error: 'invalid JSON',
+      completedStages: ['recording', 'transcribing'],
+      hasTranscript: true
+    })
+  })
+
+  it('manual storage retry clears pending backoff without including pending or running local work', async () => {
+    const { getDb } = await import('../db/connection')
+    const { retryPrototypeProcessing, retryPrototypeJobKinds, upsertPrototypeJob } =
+      await import('./jobs')
+    const db = getDb()
+    db.prepare(
+      `INSERT INTO meetings (id, owner_id, title, created_at, duration_sec, status, audio_path)
+      VALUES ('meeting-7', 'owner-1', '회의 7', 1, 9000, 'done', '/tmp/meeting.wav')`
+    ).run()
+    upsertPrototypeJob({
+      recordingId: 'meeting-7',
+      kind: 'transcript',
+      status: 'running',
+      stage: 'transcribing'
+    })
+    upsertPrototypeJob({
+      recordingId: 'meeting-7',
+      kind: 'ai',
+      status: 'pending',
+      stage: 'summarizing'
+    })
+    db.prepare(
+      `INSERT INTO prototype_outbox
+      (id, owner_id, kind, payload_json, status, attempt_count, next_retry_at, last_error, created_at)
+      VALUES ('pending-upload', 'owner-1', 'artifact-upload', '{"recordingId":"meeting-7"}', 'pending', 2, 9999999999999, 'offline', 1)`
+    ).run()
+    expect(retryPrototypeJobKinds({ meetingId: 'meeting-7' })).toEqual([])
+    retryPrototypeProcessing({ meetingId: 'meeting-7' })
+    expect(
+      db
+        .prepare(
+          "SELECT status, next_retry_at, last_error FROM prototype_outbox WHERE id='pending-upload'"
+        )
+        .get()
+    ).toEqual({ status: 'pending', next_retry_at: 0, last_error: null })
+    expect(
+      db
+        .prepare(
+          "SELECT kind, status FROM prototype_jobs WHERE kind IN ('transcript', 'ai') ORDER BY kind"
+        )
+        .all()
+    ).toEqual([
+      { kind: 'ai', status: 'pending' },
+      { kind: 'transcript', status: 'running' }
+    ])
   })
 })

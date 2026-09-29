@@ -15,6 +15,7 @@ import {
   type GetSettingsResponse,
   type GetRecordingStateResponse,
   type ListPrototypeDocumentsResponse,
+  type ListPrototypeSummariesResponse,
   type LoginPrototypeResponse,
   type LogoutPrototypeResponse,
   type ModelDownloadProgressEvent,
@@ -78,6 +79,7 @@ import { replaceGlobalShortcuts, setGlobalShortcutsSuspended } from '../windows/
 import { beginPrototypeLogin, logoutPrototype } from '../prototype/auth'
 import { prototypeAuthState } from '../prototype/authState'
 import { getPrototypeDocument, listPrototypeDocuments } from '../prototype/documents'
+import { listMeetingSummaries } from '../prototype/meetingSummaries'
 import { trackPrototypeEvent } from '../prototype/events'
 import {
   listPrototypeProcessing,
@@ -395,6 +397,10 @@ export const registerIpcHandlers = () => {
     listPrototypeDocuments()
   )
 
+  ipcMain.handle(IPC.prototype.listSummaries, (): ListPrototypeSummariesResponse =>
+    listMeetingSummaries()
+  )
+
   ipcMain.handle(
     IPC.prototype.getDocument,
     (_event, payload): Promise<GetPrototypeDocumentResponse> =>
@@ -413,8 +419,8 @@ export const registerIpcHandlers = () => {
 
   ipcMain.handle(IPC.prototype.retry, (_event, payload): RetryPrototypeProcessingResponse => {
     const meetingId = readMeetingId(payload)
-    const response = retryPrototypeProcessing({ meetingId })
     const kinds = retryPrototypeJobKinds({ meetingId }).map((row) => row.kind)
+    const response = retryPrototypeProcessing({ meetingId })
     if (kinds.includes('transcript')) enqueuePipelineJob({ meetingId })
     if (kinds.includes('ai')) enqueueSummaryJob({ meetingId })
     return response

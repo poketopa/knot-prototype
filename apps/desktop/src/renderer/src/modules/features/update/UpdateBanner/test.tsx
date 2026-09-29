@@ -64,4 +64,20 @@ describe('UpdateBanner', () => {
     expect(screen.getByText('새 버전을 내려받지 못했습니다')).toBeTruthy()
     expect(screen.getByRole('button', { name: '다시 시도' })).toBeTruthy()
   })
+
+  it('처리 중 설치가 막히면 안내를 보여준다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(downloadUpdateApi).mockResolvedValue(undefined)
+    vi.mocked(installUpdateApi).mockRejectedValue(
+      new Error('녹음이나 AI 처리가 끝난 뒤 설치해 주세요. 내려받은 업데이트는 유지됩니다.')
+    )
+    render(<UpdateBanner />)
+
+    await emitUpdateAvailable({ version: '0.3.0-preview.6' })
+    await user.click(screen.getByRole('button', { name: '받기' }))
+    await user.click(screen.getByRole('button', { name: '다시 시작해 설치' }))
+
+    expect(screen.getByText(/녹음이나 AI 처리가 끝난 뒤 설치해 주세요/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: '다시 시도' })).toBeTruthy()
+  })
 })

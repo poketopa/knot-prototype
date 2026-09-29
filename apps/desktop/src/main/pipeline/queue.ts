@@ -9,6 +9,8 @@ import { runGlossaryDraft } from '../glossary/draft'
 import { error as logError, info, messageOf } from '../log'
 import { notifyMeetingsChanged } from '../meetingsChanged'
 import { runTopicAnalysis } from '../summary/run'
+import { createMeetingSummary } from '../summary/meetingSummary'
+import { persistMeetingSummary } from '../prototype/meetingSummaries'
 import { runPipeline } from './run'
 import {
   findPrototypeArtifact,
@@ -39,6 +41,7 @@ let notifyPipeline: (event: PipelineProgressEvent) => void = () => {}
 let notifySummary: (event: SummaryProgressEvent) => void = () => {}
 let pending: Job[] = []
 let isRunning = false
+let activeJob: Job | null = null
 
 /** main이 창을 만든 뒤 한 번 등록한다. 창이 없을 때 보내면 무시된다 */
 export const setPipelineProgressListener = (listener: (event: PipelineProgressEvent) => void) => {
@@ -195,8 +198,38 @@ const processMeeting = async (meetingId: string) => {
 
 const summarizeMeeting = async (meetingId: string) => {
   const startedAt = Date.now()
+  upsertPrototypeJob({
+    recordingId: meetingId,
+    kind: 'ai',
+    status: 'running',
+    stage: 'summarizing'
+  })
   const existingAnalysis = findPrototypeArtifact({ recordingId: meetingId, kind: 'ai_analysis' })
   if (existingAnalysis) {
+    if (!findPrototypeArtifact({ recordingId: meetingId, kind: 'meeting_summary' })) {
+      const stored: unknown = JSON.parse(existingAnalysis.content_json ?? 'null')
+      if (
+        !stored ||
+        typeof stored !== 'object' ||
+        !('schemaVersion' in stored) ||
+        stored.schemaVersion !== 1 ||
+        !('topics' in stored) ||
+        !Array.isArray(stored.topics)
+      ) {
+        throw new Error('저장된 AI 분석을 읽을 수 없습니다')
+      }
+      const meetingSummary = await createMeetingSummary({
+        recordingId: meetingId,
+        analysis: stored as import('@shared/types').TopicAnalysisResult
+      })
+      await persistMeetingSummary({
+        recordingId: meetingId,
+        content: meetingSummary.content,
+        provider: meetingSummary.provider,
+        model: meetingSummary.model,
+        rawResponses: meetingSummary.rawResponses
+      })
+    }
     checkpointAiPublish({ recordingId: meetingId, analysisArtifactId: existingAnalysis.id })
     return
   }
@@ -223,11 +256,20 @@ const summarizeMeeting = async (meetingId: string) => {
     recordingId: meetingId,
     attempt
   })
-
+  const meetingSummary = await createMeetingSummary({
+    recordingId: meetingId,
+    analysis: attempt.result
+  })
+  await persistMeetingSummary({
+    recordingId: meetingId,
+    content: meetingSummary.content,
+    provider: meetingSummary.provider,
+    model: meetingSummary.model,
+    rawResponses: meetingSummary.rawResponses
+  })
   checkpointAiPublish({ recordingId: meetingId, analysisArtifactId })
-  const summary = attempt.result.topics.length
-    ? attempt.result.topics.map((topic) => `- ${topic.title}: ${topic.overview}`).join('\n')
-    : '정리할 논의 없음'
+  const summary =
+    meetingSummary.content.body || meetingSummary.content.headline || '정리할 내용 없음'
   reportSummary({ meetingId, stage: 'done', percent: DONE_PERCENT, summary })
   trackPrototypeEvent({
     eventType: 'processing_stage_succeeded',
@@ -294,9 +336,11 @@ const drain = async () => {
   while (pending.length) {
     const [job, ...rest] = pending
     pending = rest
+    activeJob = job
 
     if (job.kind === 'glossary') {
       await job.run()
+      activeJob = null
       continue
     }
 
@@ -307,6 +351,8 @@ const drain = async () => {
         : processMeeting(job.meetingId))
     } catch (caught) {
       await failJob(job, messageOf(caught), Date.now() - startedAt)
+    } finally {
+      activeJob = null
     }
   }
 
@@ -314,6 +360,11 @@ const drain = async () => {
 }
 
 const enqueue = (job: Job) => {
+  if (job.kind !== 'glossary') {
+    const sameMeetingJob = (candidate: Job | null) =>
+      candidate?.kind === job.kind && candidate.meetingId === job.meetingId
+    if (sameMeetingJob(activeJob) || pending.some(sameMeetingJob)) return
+  }
   pending = [...pending, job]
   void drain()
 }
@@ -322,12 +373,9 @@ const enqueue = (job: Job) => {
 export const enqueuePipelineJob = ({ meetingId }: { meetingId: string }) =>
   enqueue({ kind: 'pipeline', meetingId })
 
-/** 같은 회의의 요약이 이미 줄 서 있으면 두 번 돌리지 않는다 */
-export const enqueueSummaryJob = ({ meetingId }: { meetingId: string }) => {
-  if (pending.some((job) => job.kind === 'summary' && job.meetingId === meetingId)) return
-
+/** 같은 회의의 요약이 실행 중이거나 줄 서 있으면 두 번 돌리지 않는다 */
+export const enqueueSummaryJob = ({ meetingId }: { meetingId: string }) =>
   enqueue({ kind: 'summary', meetingId })
-}
 
 export const isPipelineQueueBusy = () => isRunning || pending.length > 0
 

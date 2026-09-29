@@ -4,7 +4,7 @@ import useUpdate from '@renderer/shared/hooks/domain/update/useUpdate'
 import styles from './index.module.css'
 
 /**
- * 설정의 "업데이트 확인" 토글과 무관하게 사용자가 누를 때 확인한다.
+ * 사용자가 누르면 새 버전을 다시 확인한다.
  * 새 버전이 있으면 그 자리에서 받기 → 다시 시작해 설치로 이어진다 (references/distribution.md 7절)
  */
 export default function UpdateCheck() {

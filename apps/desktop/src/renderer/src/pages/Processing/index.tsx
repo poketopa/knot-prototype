@@ -112,9 +112,13 @@ function ProcessingContent({ meetingId }: { meetingId: string }) {
                   done: 4,
                   error: -1
                 }[job.stage]
+                const stages = ['recording', 'transcribing', 'summarizing', 'syncing'] as const
+                const completed = job.completedStages
+                  ? job.completedStages.includes(stages[index])
+                  : stageIndex > index
                 return (
-                  <li key={step} data-done={stageIndex > index}>
-                    {stageIndex > index ? '✓' : index + 1}
+                  <li key={step} data-done={completed}>
+                    {completed ? '✓' : index + 1}
                     <span>{step}</span>
                   </li>
                 )
@@ -126,6 +130,16 @@ function ProcessingContent({ meetingId }: { meetingId: string }) {
               {error || job?.error}
             </p>
           )}
+          {job?.syncError && (
+            <p role="alert" className={styles.error}>
+              서버 보관: {job.syncError}
+            </p>
+          )}
+          {job?.recordingWarning && (
+            <p role="alert" className={styles.error}>
+              {job.recordingWarning}
+            </p>
+          )}
           {job && (
             <p className={styles.saved}>
               {job.saved
@@ -134,12 +148,13 @@ function ProcessingContent({ meetingId }: { meetingId: string }) {
             </p>
           )}
           <div className={styles.actions}>
-            {(job?.status === 'failed' || job?.stage === 'error' || job?.stage === 'syncing') && (
+            {(job?.canRetry ??
+              (job?.status === 'failed' || job?.stage === 'error' || job?.stage === 'syncing')) && (
               <button onClick={() => void retry()} disabled={isRetrying}>
                 {isRetrying ? '다시 시작하는 중…' : '실패한 단계 다시 시도'}
               </button>
             )}
-            {job && !['recording', 'transcribing'].includes(job.stage) && (
+            {job && (job.hasTranscript ?? !['recording', 'transcribing'].includes(job.stage)) && (
               <button onClick={() => setIsTranscriptOpen(!isTranscriptOpen)}>
                 {isTranscriptOpen ? '원문 닫기' : '전사 원문 보기'}
               </button>

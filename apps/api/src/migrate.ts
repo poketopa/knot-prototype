@@ -16,6 +16,27 @@ export async function migrate(connectionString = loadConfig().migrationDatabaseU
        ON CONFLICT (version) DO NOTHING`,
       ['001_init']
     )
+    const meetingSummaryMigration = await db.query(
+      'SELECT 1 FROM schema_migrations WHERE version = $1',
+      ['002_meeting_summary']
+    )
+    if (meetingSummaryMigration.rowCount === 0) {
+      const sql = await readFile(join(migrationsDir, '002_meeting_summary.sql'), 'utf8')
+      const client = await db.connect()
+      try {
+        await client.query('BEGIN')
+        await client.query(sql)
+        await client.query('INSERT INTO schema_migrations (version) VALUES ($1)', [
+          '002_meeting_summary'
+        ])
+        await client.query('COMMIT')
+      } catch (error) {
+        await client.query('ROLLBACK')
+        throw error
+      } finally {
+        client.release()
+      }
+    }
     await configureRuntimeRole(db)
   } finally {
     await db.end()

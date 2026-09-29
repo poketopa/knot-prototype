@@ -30,7 +30,7 @@ mac:
     - target: dmg
       arch:
         - arm64
-    - target: dir
+    - target: zip
       arch:
         - arm64
   minimumSystemVersion: 14.0.0
@@ -51,5 +51,9 @@ mac:
 dmg:
   artifactName: knot-prototype-${version}-arm64.${ext}
 npmRebuild: false
-# prototype build는 원본 앱의 GitHub release/update 채널을 사용하지 않는다.
-publish: null
+publish:
+  provider: github
+  owner: poketopa
+  repo: knot-prototype
+  releaseType: prerelease
+  publishAutoUpdate: true

@@ -54,6 +54,18 @@ export interface PrototypeTranscript {
   utterances: Utterance[]
 }
 
+export interface PrototypeMeetingSummary {
+  recordingId: string
+  title: string
+  startedAt: string
+  durationSec: number
+  status: 'recording' | 'processing' | 'ready' | 'empty' | 'failed'
+  headline?: string
+  body?: string
+  error?: string
+  hasTranscript: boolean
+}
+
 export type PrototypeProcessingStage =
   'recording' | 'transcribing' | 'summarizing' | 'publishing' | 'syncing' | 'done' | 'error'
 
@@ -64,6 +76,11 @@ export interface PrototypeProcessingItem {
   stage: PrototypeProcessingStage
   error?: string
   saved?: boolean
+  completedStages?: Array<'recording' | 'transcribing' | 'summarizing' | 'syncing'>
+  hasTranscript?: boolean
+  syncError?: string
+  canRetry?: boolean
+  recordingWarning?: string
 }
 
 export type PrototypeEventType =

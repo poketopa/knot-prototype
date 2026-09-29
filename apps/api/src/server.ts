@@ -35,6 +35,7 @@ import { canonicalHash, pkceChallenge, randomToken, sha256Hex } from './crypto.j
 import type { Db, DbClient } from './db.js'
 import { withTransaction } from './db.js'
 import { ApiError, sendError } from './errors.js'
+import { ChunkUploadStorage } from './storage/chunks.js'
 import { LocalStorage } from './storage/local.js'
 import { S3Storage } from './storage/s3.js'
 import type { ArtifactStorage } from './storage/types.js'
@@ -44,6 +45,7 @@ export type ServerDeps = {
   db: Db
   githubProvider?: GithubProvider
   storage?: ArtifactStorage
+  chunkStorage?: ChunkUploadStorage
 }
 
 function createStorage(config: AppConfig): ArtifactStorage {
@@ -56,7 +58,8 @@ export function buildServer({
   config,
   db,
   githubProvider = new RealGithubProvider(config),
-  storage = createStorage(config)
+  storage = createStorage(config),
+  chunkStorage = new ChunkUploadStorage(config.localStorageRoot)
 }: ServerDeps): FastifyInstance {
   const authAttemptLimiter = new Map<string, { count: number; resetAt: number }>()
   const app = Fastify({
@@ -364,11 +367,65 @@ export function buildServer({
           'Only WAV artifacts use upload descriptors'
         )
       }
-      return {
-        method: 'PUT',
-        url: `/v1/artifacts/${artifact.id}/content`,
-        expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString()
+      return uploadDescriptor(chunkStorage, user, artifact)
+    }
+  )
+
+  app.get<{ Params: { id: string } }>(
+    '/v1/artifacts/:id/upload',
+    { schema: { params: uuidParamSchema('id') } },
+    async (request) => {
+      const user = await authenticate(db, request)
+      const artifact = await getArtifact(db, user, request.params.id)
+      if (artifact.kind !== 'wav') {
+        throw new ApiError(
+          400,
+          'ARTIFACT_UPLOAD_NOT_REQUIRED',
+          'Only WAV artifacts use upload descriptors'
+        )
       }
+      return uploadDescriptor(chunkStorage, user, artifact)
+    }
+  )
+
+  app.put<{ Params: { id: string; index: string }; Body: IncomingMessage }>(
+    '/v1/artifacts/:id/chunks/:index',
+    {
+      schema: {
+        params: {
+          type: 'object',
+          required: ['id', 'index'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            index: { type: 'string', pattern: '^[0-9]+$' }
+          },
+          additionalProperties: false
+        }
+      }
+    },
+    async (request) => {
+      const user = await authenticate(db, request)
+      const artifact = await getArtifact(db, user, request.params.id)
+      if (!artifact.storage_key || artifact.kind !== 'wav') {
+        throw new ApiError(400, 'ARTIFACT_NOT_FILE_BACKED', 'Artifact does not accept file content')
+      }
+      const expectedSha256 = request.headers['x-chunk-sha256']
+      const contentLength = request.headers['content-length']
+      if (typeof expectedSha256 !== 'string') {
+        throw new ApiError(400, 'ARTIFACT_CHUNK_SHA256_REQUIRED', 'Chunk checksum is required')
+      }
+      if (typeof contentLength !== 'string') {
+        throw new ApiError(400, 'ARTIFACT_CHUNK_LENGTH_REQUIRED', 'Chunk length is required')
+      }
+      const uploaded = await chunkStorage.putChunk({
+        scope: { userId: user.id, artifactId: request.params.id },
+        index: Number(request.params.index),
+        input: request.body,
+        expectedSha256,
+        expectedByteLength: Number(contentLength),
+        artifact: { sha256: artifact.sha256, byteLength: Number(artifact.byte_length) }
+      })
+      return uploaded
     }
   )
 
@@ -407,9 +464,16 @@ export function buildServer({
       if (!artifact.storage_key) {
         return mapArtifact(artifact)
       }
-      const verified = await storage.verify(artifact.storage_key, {
+      const expected = {
         sha256: artifact.sha256,
         byteLength: Number(artifact.byte_length)
+      }
+      const verified = await verifyOrFinalizeArtifact({
+        storage,
+        chunkStorage,
+        user,
+        artifact,
+        expected
       })
       await db.query(
         `UPDATE uploads
@@ -544,6 +608,54 @@ export function buildServer({
   )
 
   return app
+}
+
+async function uploadDescriptor(
+  chunkStorage: ChunkUploadStorage,
+  user: AuthenticatedUser,
+  artifact: ArtifactRow
+) {
+  const completed = artifact.upload_status === 'completed'
+  return {
+    ...(await chunkStorage.descriptor(
+      { userId: user.id, artifactId: artifact.id },
+      { sha256: artifact.sha256, byteLength: Number(artifact.byte_length) },
+      completed
+    )),
+    // Kept for older desktop builds that only know the one-shot upload endpoint.
+    expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString()
+  }
+}
+
+async function verifyOrFinalizeArtifact({
+  storage,
+  chunkStorage,
+  user,
+  artifact,
+  expected
+}: {
+  storage: ArtifactStorage
+  chunkStorage: ChunkUploadStorage
+  user: AuthenticatedUser
+  artifact: ArtifactRow
+  expected: { sha256: string; byteLength: number }
+}) {
+  if (!artifact.storage_key) {
+    throw new ApiError(400, 'ARTIFACT_NOT_FILE_BACKED', 'Artifact does not accept file content')
+  }
+  try {
+    return await storage.verify(artifact.storage_key, expected)
+  } catch (error) {
+    if (artifact.upload_status === 'completed') throw error
+    if (!(error instanceof ApiError) || error.code !== 'ARTIFACT_CONTENT_HASH_MISMATCH') {
+      throw error
+    }
+  }
+  return chunkStorage.finalize({
+    scope: { userId: user.id, artifactId: artifact.id },
+    expected,
+    put: (input) => storage.putStream(artifact.storage_key!, input, expected)
+  })
 }
 
 function uuidParamSchema(name: string) {

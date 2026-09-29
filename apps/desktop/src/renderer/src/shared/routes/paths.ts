@@ -3,6 +3,8 @@ export const PATHS = {
   home: '/',
   record: '/record',
   recordingHistory: '/recordings',
+  summaries: '/summaries',
+  summaryDetail: '/summaries/:recordingId',
   documentDetail: '/documents/:documentId',
   meetingDetail: '/meetings/:meetingId',
   settings: '/settings'
@@ -11,3 +13,4 @@ export const PATHS = {
 export const meetingDetailPath = ({ meetingId }: { meetingId: string }) => `/meetings/${meetingId}`
 
 export const documentDetailPath = (documentId: string) => `/documents/${documentId}`
+export const summaryDetailPath = (recordingId: string) => `/summaries/${recordingId}`

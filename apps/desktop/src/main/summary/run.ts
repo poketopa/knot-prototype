@@ -16,7 +16,10 @@ import {
   SUMMARY_MAX_PREDICT_TOKENS,
   SUMMARY_SYSTEM_PROMPT,
   TOPIC_ANALYSIS_PROMPT_VERSION,
-  TOPIC_ANALYSIS_SYSTEM_PROMPT
+  TOPIC_ANALYSIS_SYSTEM_PROMPT,
+  TOPIC_ANALYSIS_MAX_PREDICT_TOKENS,
+  TOPIC_ANALYSIS_LOCAL_INPUT_CHARS,
+  TOPIC_ANALYSIS_JSON_GRAMMAR
 } from '@shared/summary'
 import type {
   SummaryStage,
@@ -161,7 +164,16 @@ interface CompleteTopicParams {
   label: string
   utterances: TopicAnalysisUtterance[]
   documents: TopicAnalysisDocument[]
+  rawLabels: string[]
 }
+
+const topicInputBudget = (client: LlmClient) =>
+  client.provider === 'local'
+    ? Math.min(client.chunkBudgetChars, TOPIC_ANALYSIS_LOCAL_INPUT_CHARS)
+    : client.chunkBudgetChars
+
+const topicPromptFits = (client: LlmClient, prompt: string) =>
+  prompt.length + TOPIC_ANALYSIS_SYSTEM_PROMPT.length <= topicInputBudget(client)
 
 const completeTopic = async ({
   client,
@@ -169,18 +181,26 @@ const completeTopic = async ({
   prompt,
   label,
   utterances,
-  documents
+  documents,
+  rawLabels
 }: CompleteTopicParams) => {
-  let raw: string
   try {
-    raw = await client.complete({
+    if (!topicPromptFits(client, prompt)) {
+      throw new Error('AI 분석 입력이 모델의 처리 범위를 넘었습니다. 원본 전사는 보관되어 있습니다')
+    }
+    const raw = await client.complete({
       system: TOPIC_ANALYSIS_SYSTEM_PROMPT,
       prompt,
-      maxTokens: SUMMARY_MAX_PREDICT_TOKENS,
+      maxTokens: TOPIC_ANALYSIS_MAX_PREDICT_TOKENS,
       label,
       workDir,
-      temperature: 0
+      temperature: 0,
+      grammar: client.provider === 'local' ? TOPIC_ANALYSIS_JSON_GRAMMAR : undefined
     })
+    await writeFile(path.join(workDir, `${label}.raw.txt`), raw, { encoding: 'utf8', flag: 'wx' })
+    rawLabels.push(label)
+
+    return parseTopicAnalysis({ raw, utterances, documents, createDocumentId: randomUUID })
   } catch (caught) {
     const diagnostics =
       caught instanceof BinaryExecutionError
@@ -203,14 +223,6 @@ const completeTopic = async ({
     })
     throw caught
   }
-  await writeFile(path.join(workDir, `${label}.raw.txt`), raw, { encoding: 'utf8', flag: 'wx' })
-
-  return parseTopicAnalysis({
-    raw,
-    utterances,
-    documents,
-    createDocumentId: randomUUID
-  })
 }
 
 interface TopicMapReduceParams {
@@ -219,6 +231,99 @@ interface TopicMapReduceParams {
   documents: TopicAnalysisDocument[]
   workDir: string
   onProgress: (progress: ProgressParams) => void
+  rawLabels: string[]
+}
+
+const sourceIdsOf = (results: TopicAnalysisResult[]) =>
+  new Set(
+    results.flatMap((result) =>
+      result.topics.flatMap((topic) =>
+        [...topic.decisions, ...topic.unresolved].flatMap((point) => point.sourceUtteranceIds)
+      )
+    )
+  )
+
+const topicReconciliationError = (reason: string) =>
+  new Error(
+    `구간별 AI 정리는 보관했지만 전체 결정을 합치지 못했습니다 (${reason}). 다른 AI 모델로 다시 시도해 주세요`
+  )
+
+/** 각 단계의 입력까지 제한한다. 조정하지 못한 구간 결과를 최종 결정으로 공개하지 않는다. */
+const reduceTopics = async ({
+  client,
+  partials,
+  documents,
+  utterances,
+  workDir,
+  rawLabels
+}: Omit<TopicMapReduceParams, 'chunks' | 'onProgress'> & {
+  partials: TopicAnalysisResult[]
+  utterances: TopicAnalysisUtterance[]
+}) => {
+  let level = partials
+  let round = 0
+  while (level.length > 1) {
+    const batches: TopicAnalysisResult[][] = []
+    let batch: TopicAnalysisResult[] = []
+    for (const partial of level) {
+      const candidate = [...batch, partial]
+      if (
+        batch.length &&
+        !topicPromptFits(
+          client,
+          buildTopicReducePrompt({ partials: candidate, documents, utterances })
+        )
+      ) {
+        batches.push(batch)
+        batch = []
+      }
+      batch.push(partial)
+    }
+    if (batch.length) batches.push(batch)
+    if (batches.every((items) => items.length === 1)) {
+      throw topicReconciliationError('모델의 입력 범위 초과')
+    }
+
+    const next: TopicAnalysisResult[] = []
+    for (const [index, items] of batches.entries()) {
+      if (items.length === 1) {
+        next.push(items[0])
+        continue
+      }
+      let result: TopicAnalysisResult
+      try {
+        result = await completeTopic({
+          client,
+          workDir,
+          documents,
+          utterances,
+          rawLabels,
+          prompt: buildTopicReducePrompt({ partials: items, documents, utterances }),
+          label: `topic-reduce-${round}-${index}`
+        })
+        const preserved = sourceIdsOf([result])
+        if ([...sourceIdsOf(items)].some((sourceId) => !preserved.has(sourceId))) {
+          throw new Error('합치기 결과에서 기존 결정 또는 미결정의 근거가 누락되었습니다')
+        }
+        const decidedBefore = new Set(
+          items.flatMap((item) =>
+            item.topics.flatMap((topic) => topic.decisions.map((point) => point.text.trim()))
+          )
+        ).size
+        const decidedAfter = result.topics.reduce((sum, topic) => sum + topic.decisions.length, 0)
+        if (decidedAfter < decidedBefore) {
+          throw new Error('합치기 결과에서 기존 결정 사항이 누락되었습니다')
+        }
+      } catch (caught) {
+        // 구간별 JSON과 실패 응답은 남기고, 미결정의 상태를 확인하지 못한 결과는 확정하지 않는다.
+        throw topicReconciliationError(messageOf(caught))
+      }
+      next.push(result)
+    }
+    level = next
+    round += 1
+  }
+  return level[0] ?? { schemaVersion: 1 as const, topics: [] }
 }
 
 const topicMapReduce = async ({
@@ -226,7 +331,8 @@ const topicMapReduce = async ({
   chunks,
   documents,
   workDir,
-  onProgress
+  onProgress,
+  rawLabels
 }: TopicMapReduceParams) => {
   const partials: TopicAnalysisResult[] = []
   const allUtterances = chunks.flat()
@@ -239,7 +345,8 @@ const topicMapReduce = async ({
       prompt: buildTopicChunkPrompt({ utterances, documents, index, total: chunks.length }),
       label: `topic-chunk-${index}`,
       utterances,
-      documents
+      documents,
+      rawLabels
     })
     await writeJson({
       file: path.join(workDir, `topic-chunk-${index}.partial.json`),
@@ -249,13 +356,13 @@ const topicMapReduce = async ({
   }
 
   onProgress({ stage: 'reduce', percent: MAP_PERCENT })
-  const reduced = await completeTopic({
+  const reduced = await reduceTopics({
     client,
-    workDir,
-    prompt: buildTopicReducePrompt({ partials, documents, utterances: allUtterances }),
-    label: 'topic-reduce',
+    partials,
+    documents,
     utterances: allUtterances,
-    documents
+    workDir,
+    rawLabels
   })
   await writeJson({ file: path.join(workDir, 'topic-reduce.result.json'), value: reduced })
 
@@ -287,11 +394,28 @@ export const runTopicAnalysis = async ({
   }
 
   const client = await createLlmClient()
-  assertTopicCatalogFits({ documents, budgetChars: client.chunkBudgetChars })
+  const inputBudget = topicInputBudget(client)
+  const overhead =
+    TOPIC_ANALYSIS_SYSTEM_PROMPT.length +
+    Math.max(
+      buildTopicWholePrompt({ documents, utterances: [] }).length,
+      buildTopicChunkPrompt({
+        documents,
+        utterances: [],
+        index: utterances.length,
+        total: utterances.length
+      }).length
+    )
+  assertTopicCatalogFits({ documents, budgetChars: inputBudget })
+  const transcriptBudget = inputBudget - overhead - 16
+  if (transcriptBudget < 128) {
+    throw new Error('기존 문서 목록과 AI 지시문이 너무 커서 회의록을 분석할 공간이 없습니다')
+  }
   const chunks = splitTopicAnalysisUtterances({
     utterances,
-    budgetChars: client.chunkBudgetChars
+    budgetChars: transcriptBudget
   })
+  const rawLabels: string[] = []
 
   info(
     `회의 ${meetingId} 주제 분석 시작 (${client.provider}, 발화 ${utterances.length}개, 구간 ${chunks.length}개)`
@@ -325,17 +449,15 @@ export const runTopicAnalysis = async ({
               prompt: buildTopicWholePrompt({ utterances: chunks[0], documents }),
               label: 'topic-whole',
               utterances: chunks[0],
-              documents
+              documents,
+              rawLabels
             })
           }
         })()
-      : await topicMapReduce({ client, chunks, documents, workDir, onProgress })
+      : await topicMapReduce({ client, chunks, documents, workDir, onProgress, rawLabels })
 
   const rawResponses = await Promise.all(
-    (chunks.length === 1
-      ? ['topic-whole']
-      : [...chunks.map((_, index) => `topic-chunk-${index}`), 'topic-reduce']
-    ).map(async (label) => ({
+    rawLabels.map(async (label) => ({
       label,
       text: await readFile(path.join(workDir, `${label}.raw.txt`), 'utf8')
     }))

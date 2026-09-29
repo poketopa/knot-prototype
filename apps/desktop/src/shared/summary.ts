@@ -210,6 +210,23 @@ export const cleanSummary = (raw: string) => {
 
 export const TOPIC_ANALYSIS_PROMPT_VERSION = 'topic-analysis-v1'
 
+/** 구조화 결과에는 요약문보다 많은 출력 공간이 필요하다. */
+export const TOPIC_ANALYSIS_MAX_PREDICT_TOKENS = 3000
+
+/** 시스템·문서 목록·형식 지시까지 포함한 로컬 입력 예산. */
+export const TOPIC_ANALYSIS_LOCAL_INPUT_CHARS = Math.floor(
+  (SUMMARY_CTX_TOKENS - TOPIC_ANALYSIS_MAX_PREDICT_TOKENS - 256) * CHARS_PER_TOKEN
+)
+
+/** 내용 검증은 parseTopicAnalysis가 맡고, 로컬 모델의 출력은 JSON 객체로 제한한다. */
+export const TOPIC_ANALYSIS_JSON_GRAMMAR = String.raw`root ::= object
+object ::= "{" ws (string ws ":" ws value (ws "," ws string ws ":" ws value)*)? ws "}"
+array ::= "[" ws (value (ws "," ws value)*)? ws "]"
+value ::= object | array | string | number | "true" | "false" | "null"
+string ::= "\"" ([^"\\\x00-\x1F] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F]{4}))* "\""
+number ::= "-"? ("0" | [1-9] [0-9]*) ("." [0-9]+)? ([eE] [+-]? [0-9]+)?
+ws ::= [ \t\n\r]*`
+
 export const TOPIC_ANALYSIS_SYSTEM_PROMPT = [
   '당신은 한국어 회의록에서 주제별 결정 사항을 구조화하는 도우미입니다.',
   '회의록에 실제로 나온 내용만 사용합니다.',
@@ -303,6 +320,25 @@ export const splitTopicAnalysisUtterances = ({
   let length = 0
 
   for (const line of lines) {
+    // 긴 한 발화도 원래 근거 id를 유지하며 분할한다. 본문을 버리거나 잘라내지 않는다.
+    const overhead = line.text.length - line.utterance.text.length + 1
+    const textBudget = Math.max(1, budgetChars - overhead)
+    if (line.text.length + 1 > budgetChars && line.utterance.text.length > textBudget) {
+      if (current.length) {
+        chunks.push(current)
+        current = []
+        length = 0
+      }
+      for (let offset = 0; offset < line.utterance.text.length;) {
+        let end = Math.min(line.utterance.text.length, offset + textBudget)
+        const last = line.utterance.text.charCodeAt(end - 1)
+        if (last >= 0xd800 && last <= 0xdbff && end < line.utterance.text.length) end -= 1
+        if (end === offset) end += 2
+        chunks.push([{ ...line.utterance, text: line.utterance.text.slice(offset, end) }])
+        offset = end
+      }
+      continue
+    }
     if (current.length && length + line.text.length + 1 > budgetChars) {
       chunks.push(current)
       current = []
@@ -419,12 +455,14 @@ export const buildTopicReducePrompt = ({
     '중복되는 기존 문서 topic은 하나로 합치고, 앞 구간의 제안이 뒤 구간에서 확정되면 최종 상태에 맞춰 decisions/unresolved를 정리하세요.',
     'newDocumentId는 모두 null로 유지하세요. 새 문서 UUID는 앱이 최종 검증 뒤 배정합니다.',
     'sourceUtteranceIds는 SOURCE_ID 형식(S001, S002...)으로 보존하고, 입력에 없는 id를 만들지 마세요.',
+    '입력의 모든 결정/미결정과 그 sourceUtteranceIds를 빠뜨리지 말고 결과에 반영하세요.',
+    '앞 구간의 미결정이 뒤 구간에서 확정되면 해당 미결정을 unresolved에서 빼고, 이전 논의와 최종 결정의 모든 sourceUtteranceIds를 합쳐 decisions에 넣으세요.',
     '',
     '## 기존 문서 목록',
     formatDocumentCatalog({ documents }),
     '',
     '## 구간별 분석',
-    JSON.stringify({ schemaVersion: 1, partials: modelVisiblePartials }, null, 2),
+    JSON.stringify({ schemaVersion: 1, partials: modelVisiblePartials }),
     '',
     '## 출력 JSON 형식',
     TOPIC_ANALYSIS_SCHEMA_TEXT
@@ -440,7 +478,13 @@ const readJsonObject = (raw: string) => {
   const trimmed = raw.trim()
   const unfenced = CODE_FENCE.exec(trimmed)?.[1] ?? trimmed
   const jsonText = JSON_OBJECT.exec(unfenced)?.[0]
-  if (!jsonText) throw new Error('AI 분석 결과가 JSON 객체가 아닙니다')
+  if (!jsonText) {
+    throw new Error(
+      unfenced.startsWith('{')
+        ? 'AI 분석 결과가 끝까지 생성되지 않았습니다. 원본 응답은 보관되어 있습니다'
+        : 'AI 분석 결과가 JSON 객체가 아닙니다. 원본 응답은 보관되어 있습니다'
+    )
+  }
 
   try {
     return JSON.parse(jsonText) as unknown
