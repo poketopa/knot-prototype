@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { chmodSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
 
@@ -164,6 +164,24 @@ describe('EC2 deployment assets', () => {
       'knot-prototype-postgres-20260929T000000Z-1.dump.sha256',
       'knot-prototype-postgres-20260929T000000Z.dump.sha256'
     ])
+  })
+
+  it('creates verifiable checksums with the default relative backup directory', () => {
+    const harness = makeBackupHarness('#!/usr/bin/env sh\nprintf relative-path-dump\n')
+    const env = { ...process.env }
+    delete env.BACKUP_DIR
+    execFileSync('sh', [resolve(backupScriptPath)], {
+      cwd: dirname(harness.envFile),
+      env: {
+        ...env,
+        PATH: `${harness.fakeBin}:${process.env.PATH ?? ''}`,
+        ENV_FILE: harness.envFile
+      }
+    })
+    const directory = join(dirname(harness.envFile), 'var/prototype-backups')
+    const checksum = backupFiles(directory).find((name) => name.endsWith('.sha256'))
+    expect(checksum).toBeTruthy()
+    expect(() => execFileSync('sha256sum', ['-c', checksum!], { cwd: directory })).not.toThrow()
   })
 
   it('does not leave completed dump or hash files when pg_dump fails', () => {

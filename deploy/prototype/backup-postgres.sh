@@ -18,6 +18,8 @@ fi
 
 mkdir -p "$BACKUP_DIR"
 chmod 700 "$BACKUP_DIR"
+# Later checksum steps change directory; keep reservation paths anchored.
+BACKUP_DIR=$(cd "$BACKUP_DIR" && pwd)
 
 reserve_backup_slot() {
   suffix=0
