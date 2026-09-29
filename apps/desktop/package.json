@@ -1,6 +1,6 @@
 {
   "name": "meeting-stt",
-  "version": "0.3.0-preview.2",
+  "version": "0.3.0-preview.3",
   "description": "Knot macOS 개인 회의 기록 프로토타입",
   "private": true,
   "main": "./out/main/index.js",
@@ -17,10 +17,11 @@
     "build:unpack": "pnpm run build && electron-builder --dir",
     "build:win": "pnpm run build && electron-builder --win",
     "build:mac": "pnpm run build && electron-builder --mac",
-    "build:mac:release": "pnpm run build && electron-builder --mac -c.mac.notarize=true",
-    "release:mac": "pnpm run build && electron-builder --mac -c.mac.notarize=true --publish always",
+    "build:mac:release": "pnpm run build && electron-builder --mac -c.forceCodeSigning=true -c.mac.notarize=true && pnpm run verify:mac:release",
+    "release:mac": "pnpm run build:mac:release",
     "setup:bin": "tsx scripts/setupBin.ts",
-    "setup:models": "tsx scripts/setupModels.ts"
+    "setup:models": "tsx scripts/setupModels.ts",
+    "verify:mac:release": "node scripts/verifyMacRelease.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",
