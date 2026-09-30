@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto'
-import type {
-  PrototypeDocumentContribution,
-  PrototypeDocumentDetail,
-  PrototypeDocumentListItem,
-  PrototypeOutlineSection,
-  PrototypeSummarySection
+import {
+  prototypeBroadDocumentDomain,
+  type PrototypeDocumentContribution,
+  type PrototypeDocumentDetail,
+  type PrototypeDocumentListItem,
+  type PrototypeOutlineSection,
+  type PrototypeSummarySection
 } from '@shared/prototype'
 import { getDb } from '../db/connection'
 import { requirePrototypeUser } from './authState'
@@ -17,6 +18,7 @@ interface TreeItem extends PrototypeDocumentListItem {
 }
 interface RemoteDetail extends TreeItem {
   transcriptArtifactId?: string
+  durationSec?: number
   body: {
     schemaVersion: 2
     summarySections: PrototypeSummarySection[]
@@ -35,6 +37,51 @@ interface TreeRow {
   updated_at: string
 }
 
+const latestAnalysisTopicsByRecording = (ownerId: string) => {
+  const rows = getDb()
+    .prepare(
+      `SELECT recording_id, content_json
+       FROM prototype_artifacts
+       WHERE owner_id = ? AND kind = 'ai_analysis'
+       ORDER BY recording_id, created_at DESC, rowid DESC`
+    )
+    .all(ownerId) as Array<{ recording_id: string; content_json: string | null }>
+  const active = new Map<string, Set<string>>()
+
+  for (const row of rows) {
+    if (active.has(row.recording_id)) continue
+    let analysis
+    try {
+      analysis = row.content_json ? JSON.parse(row.content_json) : null
+    } catch {
+      continue
+    }
+    if (analysis?.schemaVersion !== 2 || !Array.isArray(analysis.topics)) continue
+
+    active.set(
+      row.recording_id,
+      new Set(
+        analysis.topics
+          .map((topic: { documentId?: unknown }) => topic.documentId)
+          .filter((id: unknown): id is string => typeof id === 'string' && id.length > 0)
+      )
+    )
+  }
+
+  return active
+}
+
+const isActiveTreeItem = ({
+  active,
+  item
+}: {
+  active: Map<string, Set<string>>
+  item: Pick<TreeItem, 'id' | 'recordingId'>
+}) => {
+  const activeIds = active.get(item.recordingId)
+  return !activeIds || activeIds.has(item.id)
+}
+
 const renderBody = (
   document: Pick<PrototypeDocumentDetail, 'title' | 'summarySections' | 'outline'>
 ) =>
@@ -43,19 +90,33 @@ const renderBody = (
     ...(document.summarySections ?? []).map(
       (section) => `## ${section.heading}\n\n${section.text}`
     ),
-    ...(document.outline?.length ? ['---', '## 논의 상세'] : []),
     ...(document.outline ?? []).map(
       (section) =>
-        `### ${section.heading}\n\n${section.items.map((item) => `- ${item.text}`).join('\n')}`
+        `## ${section.heading}\n\n${section.items.map((item) => `- ${item.text}`).join('\n')}`
     )
   ].join('\n\n')
+
+const localDurationSec = (ownerId: string, recordingId: string) => {
+  const row = getDb()
+    .prepare('SELECT duration_sec FROM meetings WHERE owner_id = ? AND id = ?')
+    .get(ownerId, recordingId) as { duration_sec: number } | undefined
+
+  return typeof row?.duration_sec === 'number' && row.duration_sec > 0
+    ? row.duration_sec
+    : undefined
+}
 
 const toDetail = (document: RemoteDetail): PrototypeDocumentDetail => ({
   id: document.id,
   title: document.title,
-  domain: document.domain,
+  domain: prototypeBroadDocumentDomain({
+    domain: document.domain,
+    title: document.title,
+    overview: document.body.summarySections[0]?.text
+  }),
   recordingId: document.recordingId,
   recordingStartedAt: document.recordingStartedAt,
+  durationSec: document.durationSec,
   transcriptArtifactId: document.transcriptArtifactId,
   version: document.latestVersion,
   summarySections: document.body.summarySections,
@@ -98,12 +159,20 @@ const cacheItem = (ownerId: string, item: TreeItem, detail?: PrototypeDocumentDe
 const rowToItem = (row: TreeRow): TreeItem => ({
   id: row.id,
   title: row.title,
-  domain: row.domain,
+  domain: prototypeBroadDocumentDomain({
+    domain: row.domain,
+    title: row.title,
+    overview: row.overview ?? undefined
+  }),
   recordingId: row.recording_id,
   recordingStartedAt: row.recording_started_at,
   latestVersion: row.latest_version,
   updatedAt: row.updated_at,
   ...(row.overview ? { overview: row.overview } : {})
+})
+const projectTreeItem = (item: TreeItem): TreeItem => ({
+  ...item,
+  domain: prototypeBroadDocumentDomain(item)
 })
 const assertOwner = (ownerId: string) => {
   if (requirePrototypeUser().id !== ownerId) throw new Error('계정이 변경되었습니다')
@@ -154,7 +223,11 @@ const populateLocalTree = (ownerId: string) => {
       const item: TreeItem = {
         id: legacyDocumentId(row.id, contribution.recordingId),
         title: row.title,
-        domain: row.title,
+        domain: prototypeBroadDocumentDomain({
+          domain: row.title,
+          title: row.title,
+          overview: summarySections[0]?.text
+        }),
         recordingId: contribution.recordingId,
         recordingStartedAt: contribution.startedAt,
         latestVersion: 1,
@@ -169,13 +242,17 @@ const populateLocalTree = (ownerId: string) => {
         cacheItem(
           ownerId,
           item,
-          toDetail({ ...item, body: { schemaVersion: 2, summarySections, outline } })
+          toDetail({
+            ...item,
+            durationSec: localDurationSec(ownerId, contribution.recordingId),
+            body: { schemaVersion: 2, summarySections, outline }
+          })
         )
     }
   }
   const analyses = db
     .prepare(
-      `SELECT a.content_json,a.recording_id,m.created_at
+      `SELECT a.content_json,a.recording_id,m.created_at,m.duration_sec
     FROM prototype_artifacts a JOIN meetings m ON m.id=a.recording_id AND m.owner_id=a.owner_id
     WHERE a.owner_id=? AND a.kind='ai_analysis' ORDER BY a.created_at`
     )
@@ -183,6 +260,7 @@ const populateLocalTree = (ownerId: string) => {
     content_json: string | null
     recording_id: string
     created_at: number
+    duration_sec: number
   }>
   for (const row of analyses) {
     let analysis
@@ -209,7 +287,11 @@ const populateLocalTree = (ownerId: string) => {
       const item: TreeItem = {
         id: topic.documentId,
         title: topic.title,
-        domain: topic.domain,
+        domain: prototypeBroadDocumentDomain({
+          domain: topic.domain,
+          title: topic.title,
+          overview: topic.summarySections[0]?.text
+        }),
         recordingId: row.recording_id,
         recordingStartedAt: date,
         latestVersion: 1,
@@ -221,6 +303,7 @@ const populateLocalTree = (ownerId: string) => {
         item,
         toDetail({
           ...item,
+          durationSec: row.duration_sec > 0 ? row.duration_sec : undefined,
           body: {
             schemaVersion: 2,
             summarySections: topic.summarySections,
@@ -232,7 +315,7 @@ const populateLocalTree = (ownerId: string) => {
   }
 }
 
-const cachedItems = (ownerId: string) =>
+const cachedItems = (ownerId: string, active = latestAnalysisTopicsByRecording(ownerId)) =>
   (
     getDb()
       .prepare(
@@ -240,26 +323,32 @@ const cachedItems = (ownerId: string) =>
   WHERE owner_id=? ORDER BY recording_started_at DESC,id`
       )
       .all(ownerId) as TreeRow[]
-  ).map(rowToItem)
+  )
+    .map(rowToItem)
+    .filter((item) => isActiveTreeItem({ active, item }))
 
 /** 로컬 산출물은 원격 업로드가 끝나기 전부터 문서 트리에 포함된다. */
 export const listPrototypeDocuments = async (): Promise<PrototypeDocumentListItem[]> => {
   const ownerId = requirePrototypeUser().id
   populateLocalTree(ownerId)
+  const active = latestAnalysisTopicsByRecording(ownerId)
   try {
     const remote = await prototypeRequest<{ documents: TreeItem[] }>({ path: '/document-tree' })
     assertOwner(ownerId)
     getDb().transaction(() => {
       for (const item of remote.documents) cacheItem(ownerId, item)
     })()
-    const items = new Map(cachedItems(ownerId).map((item) => [item.id, item]))
-    for (const item of remote.documents) items.set(item.id, item)
+    const items = new Map(cachedItems(ownerId, active).map((item) => [item.id, item]))
+    for (const item of remote.documents) {
+      const projected = projectTreeItem(item)
+      if (isActiveTreeItem({ active, item: projected })) items.set(projected.id, projected)
+    }
     return [...items.values()].sort((a, b) =>
       b.recordingStartedAt.localeCompare(a.recordingStartedAt)
     )
   } catch {
     assertOwner(ownerId)
-    return cachedItems(ownerId)
+    return cachedItems(ownerId, active)
   }
 }
 
@@ -273,7 +362,13 @@ export const getPrototypeDocument = async ({
   try {
     const remote = await prototypeRequest<RemoteDetail>({ path: `/document-tree/${documentId}` })
     assertOwner(ownerId)
-    const detail = toDetail(remote)
+    if (!isActiveTreeItem({ active: latestAnalysisTopicsByRecording(ownerId), item: remote })) {
+      return null
+    }
+    const detail = toDetail({
+      ...remote,
+      durationSec: remote.durationSec ?? localDurationSec(ownerId, remote.recordingId)
+    })
     cacheItem(ownerId, remote, detail)
     return detail
   } catch (caught) {
@@ -284,6 +379,14 @@ export const getPrototypeDocument = async ({
     if (!row) {
       if (caught instanceof PrototypeApiError && caught.status === 404) return null
       throw caught
+    }
+    if (
+      !isActiveTreeItem({
+        active: latestAnalysisTopicsByRecording(ownerId),
+        item: { id: row.id, recordingId: row.recording_id }
+      })
+    ) {
+      return null
     }
     if (!row.detail_json)
       throw new Error(

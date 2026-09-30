@@ -33,6 +33,7 @@ import {
   type UpdateGlossaryResponse,
   type UpdateSettingsResponse,
   type ReadPrototypeTranscriptResponse,
+  type ReanalyzePrototypeDocumentsResponse,
   type RetryPrototypeProcessingResponse,
   type SetupStatusResponse,
   type TrackPrototypeEventRequest
@@ -93,6 +94,7 @@ import {
 } from '../prototype/jobs'
 import { readPrototypeTranscript } from '../prototype/artifacts'
 import { completeSetup, getSetupStatus } from '../prototype/setup'
+import { reanalyzePrototypeDocuments } from '../prototype/reanalyzeDocuments'
 
 const FULL_PERCENT = 100
 
@@ -400,6 +402,11 @@ export const registerIpcHandlers = () => {
 
   ipcMain.handle(IPC.prototype.listDocuments, (): Promise<ListPrototypeDocumentsResponse> =>
     listPrototypeDocuments()
+  )
+
+  ipcMain.handle(
+    IPC.prototype.reanalyzeDocuments,
+    (): Promise<ReanalyzePrototypeDocumentsResponse> => reanalyzePrototypeDocuments()
   )
 
   ipcMain.handle(IPC.prototype.listSummaries, (): ListPrototypeSummariesResponse =>

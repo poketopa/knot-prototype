@@ -246,12 +246,19 @@ export const preserveTranscriptArtifact = async ({
 
 export const preserveTopicAnalysisArtifacts = async ({
   recordingId,
-  attempt
+  attempt,
+  expectedOwnerId
 }: {
   recordingId: string
   attempt: TopicAnalysisAttempt
+  expectedOwnerId?: string
 }) => {
+  const ownerId = expectedOwnerId ?? requirePrototypeUser().id
+  const assertOwner = () => {
+    if (requirePrototypeUser().id !== ownerId) throw new Error('계정이 변경되었습니다')
+  }
   for (const raw of attempt.rawResponses) {
+    assertOwner()
     await registerPrototypeArtifact({
       recordingId,
       kind: 'ai_raw',
@@ -263,6 +270,7 @@ export const preserveTopicAnalysisArtifacts = async ({
   }
 
   for (const partial of attempt.partialResults) {
+    assertOwner()
     await registerPrototypeArtifact({
       recordingId,
       kind: 'ai_partial',
@@ -273,6 +281,7 @@ export const preserveTopicAnalysisArtifacts = async ({
     })
   }
 
+  assertOwner()
   return registerPrototypeArtifact({
     recordingId,
     kind: 'ai_analysis',

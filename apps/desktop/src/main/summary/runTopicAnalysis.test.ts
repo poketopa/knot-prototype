@@ -148,7 +148,7 @@ describe('runTopicAnalysis', () => {
     expect(failure).toMatchObject({
       provider: 'local',
       model: 'test-model',
-      promptVersion: 'topic-analysis-v2',
+      promptVersion: 'topic-analysis-v3',
       error: '모델 실패'
     })
     expect(failure.diagnostics).toBeUndefined()
@@ -214,7 +214,7 @@ describe('runTopicAnalysis', () => {
     expect(attempt.result.schemaVersion).toBe(2)
     if (attempt.result.schemaVersion !== 2) throw new Error('expected V2')
     expect(attempt.result.topics[0]).toMatchObject({
-      domain: '프로덕트',
+      domain: '개발',
       title: '녹음 파일 업로드와 처리 속도'
     })
     expect(attempt.result.topics[0].documentId).toMatch(

@@ -73,11 +73,15 @@ export const checkpointAiPublish = ({
   recordingId,
   analysisArtifactId,
   transcriptArtifactId,
+  replaceRecordingDocuments = false,
+  forcePublish = false,
   enqueue = enqueueOutbox
 }: {
   recordingId: string
   analysisArtifactId: string
   transcriptArtifactId?: string
+  replaceRecordingDocuments?: boolean
+  forcePublish?: boolean
   enqueue?: typeof enqueueOutbox
 }) => {
   const owner = requirePrototypeUser()
@@ -112,7 +116,7 @@ export const checkpointAiPublish = ({
          WHERE owner_id = @ownerId AND recording_id = @recordingId AND kind = 'publish'`
       )
       .get({ ownerId: owner.id, recordingId }) as { status: string } | undefined
-    if (publishJob?.status === 'succeeded') return
+    if (publishJob?.status === 'succeeded' && !forcePublish) return
 
     upsertPrototypeJob({
       recordingId,
@@ -157,6 +161,7 @@ export const checkpointAiPublish = ({
       payload: {
         recordingId,
         analysisArtifactId,
+        ...(replaceRecordingDocuments ? { replaceRecordingDocuments: true } : {}),
         ...(sourceTranscriptId ? { transcriptArtifactId: sourceTranscriptId } : {})
       },
       ownerId: owner.id

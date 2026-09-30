@@ -74,6 +74,7 @@ export const IPC = {
     login: 'prototype:login',
     logout: 'prototype:logout',
     listDocuments: 'prototype:documents:list',
+    reanalyzeDocuments: 'prototype:documents:reanalyze',
     listSummaries: 'prototype:summaries:list',
     regenerateSummary: 'prototype:summaries:regenerate',
     getDocument: 'prototype:documents:get',
@@ -363,6 +364,14 @@ export type LogoutPrototypeResponse = PrototypeAuthState
 
 export type ListPrototypeDocumentsResponse = PrototypeDocumentListItem[]
 export type ListPrototypeSummariesResponse = PrototypeMeetingSummary[]
+
+export interface ReanalyzePrototypeDocumentsResponse {
+  requested: number
+  processed: number
+  skipped: number
+  failed: number
+  failures: Array<{ recordingId: string; title: string; error: string }>
+}
 
 export interface GetPrototypeDocumentRequest {
   documentId: string

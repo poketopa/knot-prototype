@@ -14,6 +14,7 @@ import type {
   TopicAnalysisTopic,
   TopicAnalysisUtterance
 } from './types'
+import { prototypeBroadDocumentDomain } from './prototype'
 
 /**
  * Qwen3 토크나이저로 실측한 한국어 회의록의 문자/토큰 비 (40,089자 → 28,004토큰 = 1.43).
@@ -212,7 +213,7 @@ export const cleanSummary = (raw: string) => {
     .trim()
 }
 
-export const TOPIC_ANALYSIS_PROMPT_VERSION = 'topic-analysis-v2'
+export const TOPIC_ANALYSIS_PROMPT_VERSION = 'topic-analysis-v3'
 
 /** 구조화 결과에는 자유 섹션과 상세 outline까지 담을 출력 공간이 필요하다. */
 export const TOPIC_ANALYSIS_MAX_PREDICT_TOKENS = 3400
@@ -238,9 +239,12 @@ export const TOPIC_ANALYSIS_SYSTEM_PROMPT = [
   '한 회의에서 여러 주제가 나오면 주제마다 별도 topic으로 나눕니다.',
   '같은 주제가 기존 문서 목록에 있어도 기존 문서 id를 사용하지 않습니다. 이번 녹음의 주제마다 새 문서를 만듭니다.',
   'documentId는 null로 출력합니다. 앱이 검증 뒤 새 UUID를 배정합니다.',
-  'domain은 기존 문서 목록의 넓은 분류를 참고하되, 회의 내용에 맞는 짧은 한국어 도메인 이름으로 고릅니다.',
-  'summarySections는 문서 상단의 간결한 핵심입니다. "결정 사항", "미결정" 같은 고정 템플릿 제목을 쓰지 말고 주제에 맞는 heading을 고릅니다.',
-  'outline은 하단의 자세한 개괄식 논의입니다. 근거, 이유, 대안, 불확실성, 후속 질문 등 회의록에 나온 중요한 세부사항을 보존합니다.',
+  'domain은 넓은 탐색 분류입니다. 가능하면 문서, AI, 개발, 탐색, 독서 같은 큰 범주를 고르고, 좁은 주제 제목을 domain으로 쓰지 않습니다.',
+  'title은 문서 제목입니다. 회의에서 논의한 구체 주제를 한눈에 알 수 있게 씁니다.',
+  'summarySections와 outline은 화면에서 하나의 문서 흐름으로 이어집니다. 고정 템플릿을 채우지 말고 회의 내용에 맞는 여러 heading을 직접 고릅니다.',
+  'heading 예시는 핵심 요약, 결정, 적용 범위, 이유, 할 일, 미결정 항목, 배경, 우려, 대안입니다. 해당 내용이 회의에 없으면 그 heading을 만들지 않습니다.',
+  '긴 회의나 중요한 논의는 한두 문장으로 축약하지 말고, 읽는 사람이 세부 전문을 열지 않아도 맥락·근거·결론·남은 질문을 이해할 만큼 충분히 씁니다.',
+  'summarySections에는 가장 먼저 봐야 할 핵심 섹션을, outline에는 이어서 읽을 구체 섹션을 둡니다. 두 배열 모두 같은 문서의 동등한 섹션입니다.',
   '각 summarySections 항목과 outline.items 항목에는 근거가 된 sourceUtteranceIds를 1개 이상 넣습니다.',
   'sourceUtteranceIds에는 회의록의 SOURCE_ID 값만 사용합니다. time 값이나 speaker 값은 넣지 않습니다.',
   'SOURCE_ID는 입력으로 받은 값만 사용합니다.',
@@ -255,15 +259,15 @@ const TOPIC_ANALYSIS_SCHEMA_TEXT = [
   '  "topics": [',
   '    {',
   '      "documentId": null,',
-  '      "domain": "넓은 분류 이름",',
-  '      "title": "주제 제목",',
+  '      "domain": "문서 또는 AI 또는 개발 또는 탐색 또는 독서 같은 넓은 분류",',
+  '      "title": "구체적인 문서 제목",',
   '      "summarySections": [',
-  '        {"heading": "주제에 맞는 핵심 제목", "text": "간결한 핵심 내용", "sourceUtteranceIds": ["S001"]}',
+  '        {"heading": "회의 내용에 맞는 섹션 제목", "text": "맥락과 핵심을 이해할 수 있는 충분한 설명", "sourceUtteranceIds": ["S001"]}',
   '      ],',
   '      "outline": [',
   '        {',
-  '          "heading": "논의 상세 제목",',
-  '          "items": [{"text": "구체적인 내용·근거·대안·불확실성", "sourceUtteranceIds": ["S002"]}]',
+  '          "heading": "회의 내용에 맞는 이어지는 섹션 제목",',
+  '          "items": [{"text": "구체적인 내용·근거·대안·불확실성·후속 질문", "sourceUtteranceIds": ["S002"]}]',
   '        }',
   '      ]',
   '    }',
@@ -373,7 +377,7 @@ const formatDocumentCatalog = ({ documents }: { documents: TopicAnalysisDocument
   return documents
     .map((document) => {
       const overview = document.overview?.trim()
-      const domain = document.domain?.trim()
+      const domain = prototypeBroadDocumentDomain(document)
       const title = domain ? `${domain} / ${document.title}` : document.title
 
       return `- ${document.id}: ${title}${overview ? ` — ${overview}` : ''}`
@@ -403,7 +407,8 @@ export const buildTopicWholePrompt = ({ utterances, documents }: BuildTopicPromp
   [
     '아래 기존 문서 목록은 도메인 이름 참고용입니다. 기존 문서 id를 결과에 쓰지 말고, 회의록을 이번 녹음의 새 주제 문서 JSON으로 출력하세요.',
     'sourceUtteranceIds에는 각 줄의 SOURCE_ID만 넣으세요. time 값(예: 00:00:00)은 근거 id가 아닙니다.',
-    '상단 summarySections에는 가장 중요한 핵심을 주제별 소제목으로 간결하게 쓰고, 하단 outline에는 이유·대안·불확실성·후속 질문 같은 구체 내용을 빠뜨리지 마세요.',
+    'domain은 문서, AI, 개발, 탐색, 독서처럼 넓게 묶고, title에 구체 주제를 적으세요.',
+    'summarySections와 outline은 고정된 두 영역이 아니라 하나의 문서 흐름입니다. 회의에 맞는 heading을 여러 개 고르고, 핵심·근거·이유·대안·불확실성·후속 질문을 충분히 남기세요.',
     '회의록에 없는 구현 완료, 후속 사실, 외부 지식을 단정하지 마세요.',
     '',
     '## 기존 문서 목록',
@@ -427,7 +432,8 @@ export const buildTopicChunkPrompt = ({
     '이 구간에 실제로 나온 새 주제 문서 후보만 JSON으로 출력하세요.',
     '기존 문서 목록은 도메인 이름 참고용입니다. 기존 문서 id를 결과에 쓰지 마세요.',
     'sourceUtteranceIds에는 각 줄의 SOURCE_ID만 넣으세요. time 값(예: 00:00:00)은 근거 id가 아닙니다.',
-    '상단 summarySections와 하단 outline 모두 구체적인 근거 발화 id를 보존하세요.',
+    'domain은 문서, AI, 개발, 탐색, 독서처럼 넓게 묶고, title에 구체 주제를 적으세요.',
+    'summarySections와 outline 모두 회의 내용에 맞는 heading과 충분한 설명, 구체적인 근거 발화 id를 보존하세요.',
     '회의록에 없는 구현 완료, 후속 사실, 외부 지식을 단정하지 마세요.',
     '',
     '## 기존 문서 목록',
@@ -481,7 +487,8 @@ export const buildTopicReducePrompt = ({
     'documentId는 모두 null로 유지하세요. 새 문서 UUID는 앱이 최종 검증 뒤 배정합니다.',
     'sourceUtteranceIds는 SOURCE_ID 형식(S001, S002...)으로 보존하고, 입력에 없는 id를 만들지 마세요.',
     '입력의 모든 summarySections/outline 항목과 sourceUtteranceIds를 빠뜨리지 말고 결과에 반영하세요.',
-    '중복 문장은 합칠 수 있지만, 이유·대안·불확실성·후속 질문 같은 중요한 세부사항은 outline에 보존하세요.',
+    'domain은 문서, AI, 개발, 탐색, 독서처럼 넓은 분류로 다시 정리하세요. 좁은 문서 제목을 domain으로 쓰지 마세요.',
+    '중복 문장은 합칠 수 있지만, 핵심·근거·이유·대안·불확실성·후속 질문 같은 중요한 세부사항은 문서 섹션에 보존하세요.',
     '회의록에 없는 구현 완료, 후속 사실, 외부 지식을 단정하지 마세요.',
     '',
     '## 기존 문서 목록',
@@ -830,13 +837,20 @@ const parseGeneratedTopicAnalysis = ({
       throw new Error(`AI 분석 결과 topics[${index}]에 정리 내용이 없습니다`)
     }
 
+    const title = readString({ value: rawTopic.title, label: `topics[${index}].title` })
+    const domain = prototypeBroadDocumentDomain({
+      domain: readString({ value: rawTopic.domain, label: `topics[${index}].domain` }),
+      title,
+      overview: summarySections.map((section) => section.text).join(' ')
+    })
+
     normalizedTopics.push({
       documentId,
-      domain: readString({ value: rawTopic.domain, label: `topics[${index}].domain` }),
-      title: readString({ value: rawTopic.title, label: `topics[${index}].title` }),
+      domain,
+      title,
       summarySections,
       outline
-    } as TopicAnalysisGeneratedTopic)
+    })
   }
 
   return { schemaVersion: 2, topics: normalizedTopics }

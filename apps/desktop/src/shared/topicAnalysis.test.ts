@@ -118,7 +118,7 @@ describe('topic analysis prompts', () => {
                   items: [{ text: '검토가 남았다.', sourceUtteranceIds: ['u2'] }]
                 }
               ]
-            } as never
+            }
           ]
         }
       ]

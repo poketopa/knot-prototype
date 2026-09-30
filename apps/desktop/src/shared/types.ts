@@ -154,12 +154,6 @@ export interface TopicAnalysisGeneratedTopic {
   title: string
   summarySections: TopicAnalysisSourceSection[]
   outline: TopicAnalysisOutlineSection[]
-  /** Legacy reader compatibility only. New V2 JSON emitted by runTopicAnalysis does not include this field. */
-  overview: string
-  /** Legacy reader compatibility only. New V2 JSON emitted by runTopicAnalysis does not include this field. */
-  decisions: TopicAnalysisPoint[]
-  /** Legacy reader compatibility only. New V2 JSON emitted by runTopicAnalysis does not include this field. */
-  unresolved: TopicAnalysisPoint[]
 }
 
 export interface TopicAnalysisResultV2 {

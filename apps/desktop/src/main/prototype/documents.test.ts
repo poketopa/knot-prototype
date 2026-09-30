@@ -21,6 +21,7 @@ const document = {
   domain: '회원',
   recordingId: 'recording-a',
   recordingStartedAt: '2026-09-27T00:00:00Z',
+  durationSec: 305,
   latestVersion: 1,
   updatedAt: '2026-09-28T00:00:00Z',
   overview: 'GitHub 로그인 경험을 공유했습니다.',
@@ -55,7 +56,9 @@ it('자유로운 핵심과 개괄식 상세를 캐시하고 단일 원문만 연
   const result = await getPrototypeDocument({ documentId: document.id })
   expect(result?.body).toContain('## 사용해 본 경험')
   expect(result?.body).toContain('- 버튼의 위치를 찾기 어려웠습니다.')
+  expect(result?.body).not.toContain('## 논의 상세')
   expect(result?.body).not.toMatch(/확정된 결정|미결정 사항/)
+  expect(result?.durationSec).toBe(305)
   expect(result?.contributions).toHaveLength(1)
   expect(result?.contributions[0].recordingId).toBe('recording-a')
   state.request.mockRejectedValueOnce(new Error('offline'))
@@ -154,9 +157,71 @@ it('AI 완료된 로컬 문서를 서버 실패 중에도 즉시 읽고 재시�
   ])
   closeDb()
   const detail = await getPrototypeDocument({ documentId: 'local-topic' })
+  expect(detail?.durationSec).toBe(60)
   expect(detail?.summarySections).toEqual(document.body.summarySections)
   expect(detail?.outline).toEqual(document.body.outline)
   expect(detail?.offline).toBe(true)
+})
+
+it('최신 V2 분석이 있는 녹음은 이전 문서 캐시와 원격 예전 문서를 현재 목록에서 숨긴다', async () => {
+  const db = getDb()
+  db.prepare(
+    `INSERT INTO meetings (id,owner_id,title,created_at,duration_sec,status)
+     VALUES ('recording-a','owner-a','회의',1,60,'done')`
+  ).run()
+  db.prepare(
+    `INSERT INTO prototype_artifacts
+    (id,owner_id,recording_id,kind,content_json,sha256,byte_length,prompt_version,sync_status,created_at)
+    VALUES
+    ('old-analysis','owner-a','recording-a','ai_analysis',?,'old-hash',1,'topic-analysis-v2','succeeded',1),
+    ('new-analysis','owner-a','recording-a','ai_analysis',?,'new-hash',1,'topic-analysis-v3:document-reanalysis-20260930','pending',2)`
+  ).run(
+    JSON.stringify({
+      schemaVersion: 2,
+      topics: [
+        {
+          documentId: 'old-topic',
+          domain: '문서',
+          title: '예전 문서',
+          summarySections: document.body.summarySections,
+          outline: document.body.outline
+        }
+      ]
+    }),
+    JSON.stringify({
+      schemaVersion: 2,
+      topics: [
+        {
+          documentId: 'new-topic',
+          domain: 'AI',
+          title: '새 문서',
+          summarySections: document.body.summarySections,
+          outline: document.body.outline
+        }
+      ]
+    })
+  )
+  db.prepare(
+    `INSERT INTO prototype_document_tree
+    (id,owner_id,title,domain,recording_id,recording_started_at,latest_version,overview,detail_json,updated_at)
+    VALUES ('old-topic','owner-a','예전 문서','문서','recording-a','2026-09-30T00:00:00.000Z',1,'예전','{}','2026-09-30T00:00:00.000Z')`
+  ).run()
+  state.request.mockResolvedValueOnce({
+    documents: [
+      {
+        ...document,
+        id: 'old-topic',
+        title: '서버 예전 문서',
+        recordingId: 'recording-a'
+      }
+    ]
+  })
+
+  expect(await listPrototypeDocuments()).toMatchObject([
+    { id: 'new-topic', title: '새 문서', recordingId: 'recording-a' }
+  ])
+  state.request.mockRejectedValueOnce(new Error('offline'))
+  await expect(getPrototypeDocument({ documentId: 'old-topic' })).resolves.toBeNull()
 })
 
 it('빈 분석은 빈 문서를 만들지 않는다', async () => {
@@ -191,4 +256,28 @@ it('목록은 도메인과 원문 연결을 한 번의 요청으로 받는다', 
     { domain: '회원', recordingId: 'recording-a' }
   ])
   expect(state.request).toHaveBeenCalledExactlyOnceWith({ path: '/document-tree' })
+})
+
+it('원격 목록의 좁은 도메인을 큰 탐색 도메인으로 투영한다', async () => {
+  state.request.mockResolvedValueOnce({
+    documents: [
+      {
+        ...document,
+        id: 'document-ai',
+        title: '녹음 분석 품질과 AI 성능 개선',
+        domain: '녹음 분석 품질과 AI 성능 개선'
+      },
+      {
+        ...document,
+        id: 'document-dev',
+        title: '서버 배포와 업로드 QA',
+        domain: '개발 단위 및 개발 순서 결정'
+      }
+    ]
+  })
+
+  expect(await listPrototypeDocuments()).toMatchObject([
+    { id: 'document-ai', domain: 'AI' },
+    { id: 'document-dev', domain: '개발' }
+  ])
 })
