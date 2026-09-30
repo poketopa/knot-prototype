@@ -53,7 +53,7 @@ const attempt = (documentId: string): TopicAnalysisAttempt => ({
     topics: [
       {
         documentId,
-        domain: '녹음 분석 품질과 AI 성능 개선',
+        domain: '인공지능 연구',
         title: '화자 분리 모델 개선',
         summarySections: [
           {
@@ -194,7 +194,7 @@ describe('reanalyzePrototypeDocuments', () => {
       {
         id: '22222222-2222-4222-8222-222222222222',
         title: '화자 분리 모델 개선',
-        domain: 'AI',
+        domain: '인공지능 연구',
         recording_id: 'meeting-a'
       }
     ])

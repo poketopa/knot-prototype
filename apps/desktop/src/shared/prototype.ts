@@ -1,59 +1,5 @@
 import type { Utterance } from './types'
 
-const DOMAIN_RULES: Array<{ domain: string; keywords: string[] }> = [
-  {
-    domain: 'AI',
-    keywords: [
-      'ai',
-      'gpt',
-      'llm',
-      '모델',
-      '전사',
-      '요약',
-      '정리',
-      '분석',
-      '화자',
-      'stt',
-      'claude',
-      'codex',
-      '프롬프트'
-    ]
-  },
-  {
-    domain: '문서',
-    keywords: ['문서', '기록', '회의록', '템플릿', '원문', '노션', '누적', '보관', '정책']
-  },
-  {
-    domain: '개발',
-    keywords: [
-      '개발',
-      '구현',
-      '배포',
-      'api',
-      'backend',
-      'frontend',
-      '서버',
-      'db',
-      's3',
-      'aws',
-      '업로드',
-      '저장',
-      '품질',
-      'qa'
-    ]
-  },
-  {
-    domain: '탐색',
-    keywords: ['탐색', '검증', '사용자', '인터뷰', '리서치', '실험', '가설', '가치', '문제']
-  },
-  {
-    domain: '독서',
-    keywords: ['독서', '책', '철학', '글쓰기', '읽기', '사유', '삶']
-  }
-]
-
-const BROAD_DOMAIN_NAMES = new Set(DOMAIN_RULES.map((rule) => rule.domain))
-
 export const prototypeBroadDocumentDomain = ({
   domain,
   title
@@ -62,18 +8,10 @@ export const prototypeBroadDocumentDomain = ({
   title?: string | null
   overview?: string | null
 }) => {
-  const existing = domain?.trim()
-  if (existing && BROAD_DOMAIN_NAMES.has(existing)) return existing
+  const normalized = domain?.trim().replace(/\s+/g, ' ')
+  if (normalized) return normalized
 
-  const text = [domain, title].filter(Boolean).join(' ').toLowerCase()
-  const match = DOMAIN_RULES.find((rule) =>
-    rule.keywords.some((keyword) => text.includes(keyword.toLowerCase()))
-  )
-  if (match) return match.domain
-
-  if (existing && existing.length <= 8 && !/\s/.test(existing)) return existing
-
-  return '기타'
+  return title?.trim().replace(/\s+/g, ' ') || '미분류'
 }
 
 export interface PrototypeUser {

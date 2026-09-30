@@ -213,7 +213,7 @@ export const cleanSummary = (raw: string) => {
     .trim()
 }
 
-export const TOPIC_ANALYSIS_PROMPT_VERSION = 'topic-analysis-v3'
+export const TOPIC_ANALYSIS_PROMPT_VERSION = 'topic-analysis-v4'
 
 /** 구조화 결과에는 자유 섹션과 상세 outline까지 담을 출력 공간이 필요하다. */
 export const TOPIC_ANALYSIS_MAX_PREDICT_TOKENS = 3400
@@ -239,7 +239,9 @@ export const TOPIC_ANALYSIS_SYSTEM_PROMPT = [
   '한 회의에서 여러 주제가 나오면 주제마다 별도 topic으로 나눕니다.',
   '같은 주제가 기존 문서 목록에 있어도 기존 문서 id를 사용하지 않습니다. 이번 녹음의 주제마다 새 문서를 만듭니다.',
   'documentId는 null로 출력합니다. 앱이 검증 뒤 새 UUID를 배정합니다.',
-  'domain은 넓은 탐색 분류입니다. 가능하면 문서, AI, 개발, 탐색, 독서 같은 큰 범주를 고르고, 좁은 주제 제목을 domain으로 쓰지 않습니다.',
+  'domain은 이 사용자의 문서를 탐색하기 위한 최상위 큰 분류입니다. 고정된 분류표는 없습니다.',
+  '기존 문서 목록에 의미가 같은 큰 분류가 있으면 그 domain 값을 그대로 재사용하고, 맞는 분류가 없을 때만 새 큰 분류를 만듭니다.',
+  'domain은 주제 제목이 아니라 여러 회의를 묶을 수 있는 넓은 이름이어야 합니다. title에 구체 주제를 적습니다.',
   'title은 문서 제목입니다. 회의에서 논의한 구체 주제를 한눈에 알 수 있게 씁니다.',
   'summarySections와 outline은 화면에서 하나의 문서 흐름으로 이어집니다. 고정 템플릿을 채우지 말고 회의 내용에 맞는 여러 heading을 직접 고릅니다.',
   'heading 예시는 핵심 요약, 결정, 적용 범위, 이유, 할 일, 미결정 항목, 배경, 우려, 대안입니다. 해당 내용이 회의에 없으면 그 heading을 만들지 않습니다.',
@@ -259,7 +261,7 @@ const TOPIC_ANALYSIS_SCHEMA_TEXT = [
   '  "topics": [',
   '    {',
   '      "documentId": null,',
-  '      "domain": "문서 또는 AI 또는 개발 또는 탐색 또는 독서 같은 넓은 분류",',
+  '      "domain": "사용자별 기존 큰 분류 또는 새 큰 분류",',
   '      "title": "구체적인 문서 제목",',
   '      "summarySections": [',
   '        {"heading": "회의 내용에 맞는 섹션 제목", "text": "맥락과 핵심을 이해할 수 있는 충분한 설명", "sourceUtteranceIds": ["S001"]}',
@@ -377,7 +379,7 @@ const formatDocumentCatalog = ({ documents }: { documents: TopicAnalysisDocument
   return documents
     .map((document) => {
       const overview = document.overview?.trim()
-      const domain = prototypeBroadDocumentDomain(document)
+      const domain = document.domain?.trim().replace(/\s+/g, ' ')
       const title = domain ? `${domain} / ${document.title}` : document.title
 
       return `- ${document.id}: ${title}${overview ? ` — ${overview}` : ''}`
@@ -405,9 +407,10 @@ interface BuildTopicPromptParams {
 
 export const buildTopicWholePrompt = ({ utterances, documents }: BuildTopicPromptParams) =>
   [
-    '아래 기존 문서 목록은 도메인 이름 참고용입니다. 기존 문서 id를 결과에 쓰지 말고, 회의록을 이번 녹음의 새 주제 문서 JSON으로 출력하세요.',
+    '아래 기존 문서 목록은 이 사용자가 이미 쓰는 큰 분류(domain)를 참고하기 위한 자료입니다. 기존 문서 id를 결과에 쓰지 말고, 회의록을 이번 녹음의 새 주제 문서 JSON으로 출력하세요.',
     'sourceUtteranceIds에는 각 줄의 SOURCE_ID만 넣으세요. time 값(예: 00:00:00)은 근거 id가 아닙니다.',
-    'domain은 문서, AI, 개발, 탐색, 독서처럼 넓게 묶고, title에 구체 주제를 적으세요.',
+    'domain은 기존 목록의 큰 분류를 의미가 맞을 때 재사용하고, 맞는 분류가 없을 때만 새 큰 분류를 만드세요. 고정된 분류표는 없습니다.',
+    'domain에는 여러 문서를 묶는 이름을, title에는 이번 회의에서 나온 구체 주제를 적으세요.',
     'summarySections와 outline은 고정된 두 영역이 아니라 하나의 문서 흐름입니다. 회의에 맞는 heading을 여러 개 고르고, 핵심·근거·이유·대안·불확실성·후속 질문을 충분히 남기세요.',
     '회의록에 없는 구현 완료, 후속 사실, 외부 지식을 단정하지 마세요.',
     '',
@@ -430,9 +433,10 @@ export const buildTopicChunkPrompt = ({
   [
     `아래는 회의록 전체 ${total}개 구간 중 ${index + 1}번째 구간입니다.`,
     '이 구간에 실제로 나온 새 주제 문서 후보만 JSON으로 출력하세요.',
-    '기존 문서 목록은 도메인 이름 참고용입니다. 기존 문서 id를 결과에 쓰지 마세요.',
+    '기존 문서 목록은 이 사용자가 이미 쓰는 큰 분류(domain)를 참고하기 위한 자료입니다. 기존 문서 id를 결과에 쓰지 마세요.',
     'sourceUtteranceIds에는 각 줄의 SOURCE_ID만 넣으세요. time 값(예: 00:00:00)은 근거 id가 아닙니다.',
-    'domain은 문서, AI, 개발, 탐색, 독서처럼 넓게 묶고, title에 구체 주제를 적으세요.',
+    'domain은 기존 목록의 큰 분류를 의미가 맞을 때 재사용하고, 맞는 분류가 없을 때만 새 큰 분류를 만드세요. 고정된 분류표는 없습니다.',
+    'domain에는 여러 문서를 묶는 이름을, title에는 이번 회의에서 나온 구체 주제를 적으세요.',
     'summarySections와 outline 모두 회의 내용에 맞는 heading과 충분한 설명, 구체적인 근거 발화 id를 보존하세요.',
     '회의록에 없는 구현 완료, 후속 사실, 외부 지식을 단정하지 마세요.',
     '',
@@ -487,7 +491,8 @@ export const buildTopicReducePrompt = ({
     'documentId는 모두 null로 유지하세요. 새 문서 UUID는 앱이 최종 검증 뒤 배정합니다.',
     'sourceUtteranceIds는 SOURCE_ID 형식(S001, S002...)으로 보존하고, 입력에 없는 id를 만들지 마세요.',
     '입력의 모든 summarySections/outline 항목과 sourceUtteranceIds를 빠뜨리지 말고 결과에 반영하세요.',
-    'domain은 문서, AI, 개발, 탐색, 독서처럼 넓은 분류로 다시 정리하세요. 좁은 문서 제목을 domain으로 쓰지 마세요.',
+    'domain은 기존 목록의 큰 분류를 의미가 맞을 때 재사용하고, 맞는 분류가 없을 때만 새 큰 분류를 만드세요. 고정된 분류표는 없습니다.',
+    'domain에는 여러 문서를 묶는 이름을, title에는 이번 회의에서 나온 구체 주제를 적으세요.',
     '중복 문장은 합칠 수 있지만, 핵심·근거·이유·대안·불확실성·후속 질문 같은 중요한 세부사항은 문서 섹션에 보존하세요.',
     '회의록에 없는 구현 완료, 후속 사실, 외부 지식을 단정하지 마세요.',
     '',

@@ -258,26 +258,26 @@ it('목록은 도메인과 원문 연결을 한 번의 요청으로 받는다', 
   expect(state.request).toHaveBeenCalledExactlyOnceWith({ path: '/document-tree' })
 })
 
-it('원격 목록의 좁은 도메인을 큰 탐색 도메인으로 투영한다', async () => {
+it('원격 목록의 사용자별 도메인을 고정 키워드로 덮어쓰지 않는다', async () => {
   state.request.mockResolvedValueOnce({
     documents: [
       {
         ...document,
         id: 'document-ai',
         title: '녹음 분석 품질과 AI 성능 개선',
-        domain: '녹음 분석 품질과 AI 성능 개선'
+        domain: '인공지능 연구'
       },
       {
         ...document,
         id: 'document-dev',
         title: '서버 배포와 업로드 QA',
-        domain: '개발 단위 및 개발 순서 결정'
+        domain: '제품 개발'
       }
     ]
   })
 
   expect(await listPrototypeDocuments()).toMatchObject([
-    { id: 'document-ai', domain: 'AI' },
-    { id: 'document-dev', domain: '개발' }
+    { id: 'document-ai', domain: '인공지능 연구' },
+    { id: 'document-dev', domain: '제품 개발' }
   ])
 })

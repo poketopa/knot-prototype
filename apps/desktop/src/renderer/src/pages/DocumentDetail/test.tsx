@@ -91,7 +91,7 @@ describe('주제별 문서', () => {
     mount()
     expect(await screen.findByText('댓글과 첨부파일 보관 정책을 정했다.')).toBeTruthy()
     expect(screen.getByText('내 노트')).toBeTruthy()
-    expect(screen.getAllByText('문서').length).toBeGreaterThan(1)
+    expect(screen.getByText('계정')).toBeTruthy()
     expect(screen.getByRole('link', { name: '회원 탈퇴 정책' }).getAttribute('aria-current')).toBe(
       'page'
     )
