@@ -6,11 +6,11 @@ Knot Meeting Prototype은 macOS 개인 회의 기록 검증 도구입니다. Git
 
 ## 상태
 
-`v0.3.0-preview.8`은 **문서 → 녹음 → 설정** 세 탭으로 구성됩니다. 녹음 후 주제별 문서를 만들고, AI가 내용에 맞게 고른 핵심 섹션과 자세한 논의 목록을 보여줍니다. 문서는 읽기 전용입니다. macOS 14 이상 Apple Silicon Mac에서 사용하며, 공유 서버 연결 앱 사용자는 로컬 Docker나 OAuth 앱을 설정할 필요가 없습니다.
+`v0.3.0-preview.9`은 **문서 → 녹음 → 설정** 세 탭으로 구성됩니다. 녹음 후 주제별 문서를 만들고, AI가 내용에 맞게 고른 핵심 섹션과 자세한 논의 목록을 보여줍니다. 문서는 읽기 전용입니다. macOS 14 이상 Apple Silicon Mac에서 사용하며, 공유 서버 연결 앱 사용자는 로컬 Docker나 OAuth 앱을 설정할 필요가 없습니다.
 
 이 검증 환경에 업로드한 녹음·전사·AI 정리 파일은 공개 읽기가 가능합니다. 공개해도 되는 테스트 회의만 사용하세요.
 
-릴리스 노트: [docs/releases/0.3.0-preview.8.md](docs/releases/0.3.0-preview.8.md)
+릴리스 노트: [docs/releases/0.3.0-preview.9.md](docs/releases/0.3.0-preview.9.md)
 
 ## 기능
 
@@ -18,7 +18,7 @@ Knot Meeting Prototype은 macOS 개인 회의 기록 검증 도구입니다. Git
 - 회의 녹음, 전사 원본 저장, AI 정리본 저장
 - 녹음 탭에서 현재 녹음의 처리 상태·실패 재시도·생성 문서 확인
 - 도메인별 트리에서 회의별 주제 문서와 단일 전사 원문 읽기
-- 핵심 섹션과 개괄식 논의 상세, 기존 문서·스냅샷 보존
+- 회의 내용에 맞는 제목별 정리, 기존 문서 재정리와 원본·스냅샷 보존
 - 로컬 Fastify API와 PostgreSQL 저장
 - EC2 배포 예시, 로컬 DB 백업 스크립트, systemd timer 템플릿
 
