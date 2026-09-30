@@ -4,6 +4,7 @@ import type { LlmStatus } from './types'
 import {
   apiVendorOf,
   buildClaudeCliArgs,
+  claudeCliFailureMessage,
   isLlmProvider,
   isLlmReady,
   isOpenaiModelId,
@@ -169,8 +170,8 @@ describe('parseClaudeCliOutput', () => {
     expect(parseClaudeCliOutput(CLI_SUCCESS)).toBe('2')
   })
 
-  it('종료 코드가 0이어도 is_error면 원문을 담아 던진다', () => {
-    expect(() => parseClaudeCliOutput(CLI_NOT_LOGGED_IN)).toThrow(/Not logged in/)
+  it('종료 코드가 0이어도 is_error면 원인을 사용자가 할 수 있는 조치로 바꿔 던진다', () => {
+    expect(() => parseClaudeCliOutput(CLI_NOT_LOGGED_IN)).toThrow(/로그인/)
   })
 
   it('앞뒤에 로그가 섞여도 JSON을 찾는다', () => {
@@ -179,6 +180,39 @@ describe('parseClaudeCliOutput', () => {
 
   it('JSON이 아니면 형식 오류로 던진다', () => {
     expect(() => parseClaudeCliOutput('Segmentation fault')).toThrow(/출력 형식/)
+  })
+})
+
+describe('claudeCliFailureMessage', () => {
+  it('로그인 실패는 사용자가 바로 할 수 있는 조치로 바꾼다', () => {
+    expect(
+      claudeCliFailureMessage({
+        stdout: CLI_NOT_LOGGED_IN,
+        stderr: '',
+        fallbackMessage: 'claude 실행 실패'
+      })
+    ).toMatch(/로그인/)
+  })
+
+  it('낡은 CLI 옵션 오류는 안전 옵션을 빼지 않고 업데이트 안내로 바꾼다', () => {
+    expect(
+      claudeCliFailureMessage({
+        stdout: '',
+        stderr: 'error: unknown option --safe-mode',
+        fallbackMessage: 'claude 실행 실패'
+      })
+    ).toMatch(/최신 버전/)
+  })
+
+  it('알려진 분류가 없으면 짧은 세부 메시지를 보여 주고 키·이메일은 가린다', () => {
+    expect(
+      claudeCliFailureMessage({
+        stdout: '',
+        stderr:
+          'fatal for lhs@example.com with key sk-ant-api03-secret-secret-secret-secret-secret-secret',
+        fallbackMessage: 'claude 실행 실패'
+      })
+    ).toBe('Claude Code 실행에 실패했습니다: fatal for ***@*** with key sk-***')
   })
 })
 

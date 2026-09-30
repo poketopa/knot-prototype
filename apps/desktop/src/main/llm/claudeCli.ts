@@ -2,8 +2,8 @@ import { existsSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { buildClaudeCliArgs, parseClaudeCliOutput } from '@shared/llm'
-import { runBinary } from '../bin/spawn'
+import { buildClaudeCliArgs, claudeCliFailureMessage, parseClaudeCliOutput } from '@shared/llm'
+import { BinaryExecutionError, runBinary } from '../bin/spawn'
 import { info, messageOf, warn } from '../log'
 
 /**
@@ -110,16 +110,29 @@ export const completeWithClaudeCli = async ({
 }: CompleteWithClaudeCliParams) => {
   await mkdir(workDir, { recursive: true })
 
-  const { stdout } = await runBinary({
-    command: cliPath,
-    args: buildClaudeCliArgs({ system }),
-    input: prompt,
-    cwd: workDir,
-    env: await spawnEnv(),
-    timeoutMs: CLAUDE_CLI_TIMEOUT_MS,
-    stdoutPath: path.join(workDir, `${label}.claude.stdout.json`),
-    stderrPath: path.join(workDir, `${label}.claude.stderr.txt`)
-  })
+  let stdout = ''
+  try {
+    const result = await runBinary({
+      command: cliPath,
+      args: buildClaudeCliArgs({ system }),
+      input: prompt,
+      cwd: workDir,
+      env: await spawnEnv(),
+      timeoutMs: CLAUDE_CLI_TIMEOUT_MS,
+      stdoutPath: path.join(workDir, `${label}.claude.stdout.json`),
+      stderrPath: path.join(workDir, `${label}.claude.stderr.txt`)
+    })
+    stdout = result.stdout
+  } catch (caught) {
+    if (caught instanceof BinaryExecutionError) {
+      caught.message = claudeCliFailureMessage({
+        stdout: caught.stdout,
+        stderr: caught.stderr,
+        fallbackMessage: caught.message
+      })
+    }
+    throw caught
+  }
 
   return parseClaudeCliOutput(stdout)
 }

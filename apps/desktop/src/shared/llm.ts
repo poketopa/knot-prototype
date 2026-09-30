@@ -184,6 +184,82 @@ const extractJson = (stdout: string) => {
   }
 }
 
+const redactCliMessage = (message: string) =>
+  message
+    .replace(/sk-[A-Za-z0-9_-]{12,}/g, 'sk-***')
+    .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '***@***')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 240)
+
+const claudeCliErrorText = ({ stdout, stderr }: { stdout: string; stderr: string }) => {
+  const parsed = extractJson(stdout)
+  const result =
+    isRecord(parsed) && typeof parsed.result === 'string' && parsed.result.trim()
+      ? parsed.result
+      : ''
+  const stderrText = stderr.trim()
+
+  return [result, stderrText].filter(Boolean).join('\n')
+}
+
+/**
+ * @description Claude Code CLI 실패 원인을 사용자가 다음 행동을 알 수 있는 문장으로 바꿉니다.
+ * 원문 stdout/stderr 파일은 main 쪽 BinaryExecutionError에 그대로 남기고, 화면에는 짧고 안전한
+ * 분류 메시지만 보여 준다.
+ */
+export const claudeCliFailureMessage = ({
+  stdout,
+  stderr,
+  fallbackMessage
+}: {
+  stdout: string
+  stderr: string
+  fallbackMessage: string
+}) => {
+  const raw = claudeCliErrorText({ stdout, stderr })
+  const detail = redactCliMessage(raw)
+  const normalized = raw.toLowerCase()
+
+  if (
+    /not logged in|please run \/login|login required|authentication required|unauthorized|invalid api key|401/.test(
+      normalized
+    )
+  ) {
+    return 'Claude Code 로그인이 필요합니다. 터미널에서 Claude Code에 로그인한 뒤 앱의 AI 모델 설정에서 연결 확인을 다시 눌러 주세요.'
+  }
+
+  if (
+    /rate limit|quota|too many requests|429|credit balance|billing|usage limit/.test(normalized)
+  ) {
+    return 'Claude Code 사용량 제한이나 결제 한도 때문에 요청이 중단됐습니다. 잠시 뒤 다시 시도하거나 다른 AI 모델을 선택해 주세요.'
+  }
+
+  if (
+    /unknown option|unrecognized option|invalid option|no such option|unexpected argument|unknown command/.test(
+      normalized
+    )
+  ) {
+    return '현재 설치된 Claude Code가 회의록 분석에 필요한 안전 실행 옵션을 지원하지 않습니다. Claude Code를 최신 버전으로 업데이트한 뒤 다시 시도해 주세요.'
+  }
+
+  if (
+    /network|enotfound|econnreset|etimedout|eai_again|socket|dns|tls|certificate|connection/.test(
+      normalized
+    )
+  ) {
+    return 'Claude Code가 네트워크 요청을 완료하지 못했습니다. 인터넷 연결이나 회사·학교 네트워크 차단 여부를 확인한 뒤 다시 시도해 주세요.'
+  }
+
+  if (/permission denied|eacces/.test(normalized)) {
+    return 'Claude Code 실행 권한이 없습니다. claude 명령 파일의 실행 권한을 확인한 뒤 다시 시도해 주세요.'
+  }
+
+  if (detail) return `Claude Code 실행에 실패했습니다: ${detail}`
+
+  return fallbackMessage
+}
+
 /**
  * @description `claude -p --output-format json`의 stdout에서 답변 본문을 꺼냅니다.
  * 종료 코드가 0이어도 `is_error`가 참이면 실패이므로 한국어 안내와 원문을 함께 던진다.
@@ -200,7 +276,13 @@ export const parseClaudeCliOutput = (stdout: string) => {
 
   const result = typeof parsed.result === 'string' ? parsed.result : ''
   if (parsed.is_error === true) {
-    throw new Error(`Claude Code가 요청을 처리하지 못했습니다: ${result || '원인 불명'}`)
+    throw new Error(
+      claudeCliFailureMessage({
+        stdout,
+        stderr: '',
+        fallbackMessage: `Claude Code가 요청을 처리하지 못했습니다: ${result || '원인 불명'}`
+      })
+    )
   }
 
   return result
