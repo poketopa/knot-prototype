@@ -95,6 +95,9 @@
   line-height: 1.7;
   white-space: pre-wrap;
 }
+.body {
+  max-width: 72ch;
+}
 .message {
   padding: var(--space-5);
   background: var(--color-sidebar);
@@ -103,12 +106,23 @@
 .transcript {
   margin-top: var(--space-6);
 }
-.transcript > button {
+.transcript > button,
+.refresh > button {
   padding: var(--space-3) var(--space-4);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   cursor: pointer;
+}
+.refresh {
+  margin-top: var(--space-5);
+}
+.refresh > button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+.refresh > p {
+  margin-top: var(--space-3);
 }
 @media (max-width: 650px) {
   .heading,

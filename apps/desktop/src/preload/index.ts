@@ -39,6 +39,7 @@ import {
   type CreateSummaryRequest,
   type ReadPrototypeTranscriptRequest,
   type ReadPrototypeTranscriptResponse,
+  type RegenerateMeetingSummaryRequest,
   type ReassignUtteranceRequest,
   type RecordingCommandEvent,
   type RecordingStateEvent,
@@ -171,6 +172,8 @@ const api = {
       ipcRenderer.invoke(IPC.prototype.listDocuments),
     listSummaries: (): Promise<ListPrototypeSummariesResponse> =>
       ipcRenderer.invoke(IPC.prototype.listSummaries),
+    regenerateSummary: (payload: RegenerateMeetingSummaryRequest): Promise<void> =>
+      ipcRenderer.invoke(IPC.prototype.regenerateSummary, payload),
     getDocument: (payload: GetPrototypeDocumentRequest): Promise<GetPrototypeDocumentResponse> =>
       ipcRenderer.invoke(IPC.prototype.getDocument, payload),
     readTranscript: (

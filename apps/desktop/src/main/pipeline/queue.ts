@@ -10,7 +10,7 @@ import { error as logError, info, messageOf } from '../log'
 import { notifyMeetingsChanged } from '../meetingsChanged'
 import { runTopicAnalysis } from '../summary/run'
 import { createMeetingSummary } from '../summary/meetingSummary'
-import { persistMeetingSummary } from '../prototype/meetingSummaries'
+import { persistMeetingSummary, setMeetingSummaryRefreshState } from '../prototype/meetingSummaries'
 import { runPipeline } from './run'
 import {
   findPrototypeArtifact,
@@ -26,7 +26,7 @@ import { requirePrototypeUser } from '../prototype/authState'
 
 const DONE_PERCENT = 100
 
-type MeetingJob = { kind: 'pipeline' | 'summary'; meetingId: string }
+type MeetingJob = { kind: 'pipeline' | 'summary' | 'regenerate'; meetingId: string }
 
 /** 용어 초안은 회의에 묶이지 않고 결과를 invoke로 돌려줘야 해서, 성공·실패 처리를 `run`이 스스로 한다 */
 type GlossaryJob = { kind: 'glossary'; run: () => Promise<void> }
@@ -220,7 +220,8 @@ const summarizeMeeting = async (meetingId: string) => {
       }
       const meetingSummary = await createMeetingSummary({
         recordingId: meetingId,
-        analysis: stored as import('@shared/types').TopicAnalysisResult
+        analysis: stored as import('@shared/types').TopicAnalysisResult,
+        utterances: listUtterances({ meetingId })
       })
       await persistMeetingSummary({
         recordingId: meetingId,
@@ -258,7 +259,8 @@ const summarizeMeeting = async (meetingId: string) => {
   })
   const meetingSummary = await createMeetingSummary({
     recordingId: meetingId,
-    analysis: attempt.result
+    analysis: attempt.result,
+    utterances
   })
   await persistMeetingSummary({
     recordingId: meetingId,
@@ -279,6 +281,32 @@ const summarizeMeeting = async (meetingId: string) => {
     durationMs: Date.now() - startedAt
   })
   info(`회의 ${meetingId} 주제 분석 완료 (${attempt.result.topics.length}개 주제)`)
+}
+
+const regenerateMeetingSummary = async (meetingId: string) => {
+  setMeetingSummaryRefreshState(meetingId, { status: 'running' })
+  const analysisArtifact = findPrototypeArtifact({ recordingId: meetingId, kind: 'ai_analysis' })
+  const analysis = analysisArtifact?.content_json
+    ? (JSON.parse(analysisArtifact.content_json) as import('@shared/types').TopicAnalysisResult)
+    : { schemaVersion: 1 as const, topics: [] }
+  const result = await createMeetingSummary({
+    recordingId: meetingId,
+    analysis,
+    utterances: listUtterances({ meetingId })
+  })
+  if (!result.content.headline.trim() && !result.content.body.trim()) {
+    throw new Error('다시 정리할 전사 내용이 없습니다')
+  }
+  await persistMeetingSummary({
+    recordingId: meetingId,
+    content: result.content,
+    provider: result.provider,
+    model: result.model,
+    rawResponses: result.rawResponses,
+    allowRevision: true
+  })
+  setMeetingSummaryRefreshState(meetingId)
+  notifyMeetingsChanged()
 }
 
 /**
@@ -348,9 +376,16 @@ const drain = async () => {
     try {
       await (job.kind === 'summary'
         ? summarizeMeeting(job.meetingId)
-        : processMeeting(job.meetingId))
+        : job.kind === 'regenerate'
+          ? regenerateMeetingSummary(job.meetingId)
+          : processMeeting(job.meetingId))
     } catch (caught) {
-      await failJob(job, messageOf(caught), Date.now() - startedAt)
+      if (job.kind === 'regenerate') {
+        logError(`회의 ${job.meetingId} 정리 재생성 실패: ${messageOf(caught)}`)
+        setMeetingSummaryRefreshState(job.meetingId, { error: messageOf(caught) })
+      } else {
+        await failJob(job, messageOf(caught), Date.now() - startedAt)
+      }
     } finally {
       activeJob = null
     }
@@ -376,6 +411,18 @@ export const enqueuePipelineJob = ({ meetingId }: { meetingId: string }) =>
 /** 같은 회의의 요약이 실행 중이거나 줄 서 있으면 두 번 돌리지 않는다 */
 export const enqueueSummaryJob = ({ meetingId }: { meetingId: string }) =>
   enqueue({ kind: 'summary', meetingId })
+
+/** 이전 정리본은 유지하고, 기존 전사에서 새 정리본을 생성한다. */
+export const enqueueMeetingSummaryRegeneration = ({ meetingId }: { meetingId: string }) => {
+  if (!findMeeting({ meetingId })) throw new Error('회의를 찾을 수 없습니다')
+  if (!findPrototypeArtifact({ recordingId: meetingId, kind: 'meeting_summary' })) {
+    throw new Error('다시 만들 정리본이 없습니다')
+  }
+  const sameJob = (job: Job | null) => job?.kind === 'regenerate' && job.meetingId === meetingId
+  if (sameJob(activeJob) || pending.some(sameJob)) return
+  setMeetingSummaryRefreshState(meetingId, { status: 'queued' })
+  enqueue({ kind: 'regenerate', meetingId })
+}
 
 export const isPipelineQueueBusy = () => isRunning || pending.length > 0
 

@@ -3,7 +3,18 @@ import type { LlmProvider } from '@shared/types'
 import { listMeetings, updateMeetingSummary } from '../db/meetings'
 import { fallbackMeetingSummary, type MeetingSummaryContent } from '../summary/meetingSummary'
 import { findPrototypeArtifact, registerPrototypeArtifact } from './artifacts'
+import { emitPrototypeChanged } from './events'
 import { listPrototypeProcessing } from './jobs'
+
+type RefreshState =
+  { status: 'queued' | 'running'; error?: never } | { error: string; status?: never }
+const refreshStates = new Map<string, RefreshState>()
+
+export const setMeetingSummaryRefreshState = (recordingId: string, state?: RefreshState) => {
+  if (state) refreshStates.set(recordingId, state)
+  else refreshStates.delete(recordingId)
+  emitPrototypeChanged({ reason: 'processing', recordingId })
+}
 
 const parseSummary = (raw: string | null): MeetingSummaryContent | null => {
   if (!raw) return null
@@ -61,16 +72,18 @@ export const persistMeetingSummary = async ({
   content,
   provider,
   model,
-  rawResponses = []
+  rawResponses = [],
+  allowRevision = false
 }: {
   recordingId: string
   content: MeetingSummaryContent
   provider?: LlmProvider
   model?: string | null
   rawResponses?: Array<{ label: string; text: string }>
+  allowRevision?: boolean
 }) => {
   const existing = findPrototypeArtifact({ recordingId, kind: 'meeting_summary' })
-  if (existing) return existing.id
+  if (existing && !allowRevision) return existing.id
   for (const response of rawResponses) {
     await registerPrototypeArtifact({
       recordingId,
@@ -78,7 +91,7 @@ export const persistMeetingSummary = async ({
       content: { schemaVersion: 1, label: response.label, text: response.text },
       provider,
       model: model ?? undefined,
-      promptVersion: 'meeting-summary-v1'
+      promptVersion: 'meeting-summary-v2'
     })
   }
   const id = await registerPrototypeArtifact({
@@ -87,7 +100,7 @@ export const persistMeetingSummary = async ({
     content,
     provider,
     model: model ?? undefined,
-    promptVersion: 'meeting-summary-v1'
+    promptVersion: rawResponses.length ? 'meeting-summary-v2' : 'meeting-summary-v1-backfill'
   })
   updateMeetingSummary({
     meetingId: recordingId,
@@ -117,6 +130,7 @@ export const listMeetingSummaries = (): PrototypeMeetingSummary[] => {
   const processing = new Map(listPrototypeProcessing().map((item) => [item.meetingId, item]))
   return listMeetings().map((meeting) => {
     const job = processing.get(meeting.id)
+    const refresh = refreshStates.get(meeting.id)
     const stored = findPrototypeArtifact({ recordingId: meeting.id, kind: 'meeting_summary' })
     const canUseHistoricalFallback = job?.status !== 'failed'
     const content =
@@ -149,7 +163,9 @@ export const listMeetingSummaries = (): PrototypeMeetingSummary[] => {
       ...(status === 'failed' && (job?.error ?? meeting.errorMessage)
         ? { error: job?.error ?? meeting.errorMessage }
         : {}),
-      hasTranscript: job?.hasTranscript ?? false
+      hasTranscript: job?.hasTranscript ?? false,
+      ...(refresh?.status ? { refreshStatus: refresh.status } : {}),
+      ...(refresh?.error ? { refreshError: refresh.error } : {})
     }
   })
 }

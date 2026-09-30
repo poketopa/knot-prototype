@@ -1,13 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { listMeetings, listPrototypeProcessing, findPrototypeArtifact } = vi.hoisted(() => ({
-  listMeetings: vi.fn(),
-  listPrototypeProcessing: vi.fn(),
-  findPrototypeArtifact: vi.fn()
-}))
+const { listMeetings, listPrototypeProcessing, findPrototypeArtifact, registerPrototypeArtifact } =
+  vi.hoisted(() => ({
+    listMeetings: vi.fn(),
+    listPrototypeProcessing: vi.fn(),
+    findPrototypeArtifact: vi.fn(),
+    registerPrototypeArtifact: vi.fn()
+  }))
 vi.mock('../db/meetings', () => ({ listMeetings, updateMeetingSummary: vi.fn() }))
 vi.mock('./jobs', () => ({ listPrototypeProcessing }))
-vi.mock('./artifacts', () => ({ findPrototypeArtifact, registerPrototypeArtifact: vi.fn() }))
+vi.mock('./artifacts', () => ({ findPrototypeArtifact, registerPrototypeArtifact }))
+vi.mock('./events', () => ({ emitPrototypeChanged: vi.fn() }))
 vi.mock('../summary/meetingSummary', () => ({
   fallbackMeetingSummary: ({ topics }: { topics: Array<{ overview: string }> }) => ({
     schemaVersion: 1,
@@ -57,5 +60,24 @@ describe('meeting summary history', () => {
     ])
     const { listMeetingSummaries } = await import('./meetingSummaries')
     expect(listMeetingSummaries()[0]).toMatchObject({ status: 'failed', error: '요약 실패' })
+  })
+
+  it('재생성하면 이전 정리본을 남기고 새 산출물을 등록한다', async () => {
+    findPrototypeArtifact.mockReturnValue({ id: 'old-summary' })
+    registerPrototypeArtifact.mockResolvedValue('new-summary')
+    const { persistMeetingSummary } = await import('./meetingSummaries')
+    const content = { schemaVersion: 1 as const, headline: '새 핵심', body: '새 회의 정리' }
+
+    await expect(persistMeetingSummary({ recordingId: meeting.id, content })).resolves.toBe(
+      'old-summary'
+    )
+    expect(registerPrototypeArtifact).not.toHaveBeenCalled()
+
+    await expect(
+      persistMeetingSummary({ recordingId: meeting.id, content, allowRevision: true })
+    ).resolves.toBe('new-summary')
+    expect(registerPrototypeArtifact).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'meeting_summary', content })
+    )
   })
 })

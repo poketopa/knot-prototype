@@ -91,4 +91,36 @@ describe('meeting-wide summary', () => {
       })
     ).rejects.toThrow(/형식/)
   })
+
+  it('전사 원문을 우선 읽고 내용에 맞춰 여러 문단을 보존한다', async () => {
+    const complete = vi
+      .fn()
+      .mockResolvedValue(
+        '핵심: 출시 준비의 걸림돌을 확인했습니다.\n정리: 첫 논의에서는 접근 권한을 확인했습니다.\n\n이후 테스트 절차와 일정 사이의 관계를 검토했습니다.'
+      )
+    createLlmClient.mockResolvedValue({
+      provider: 'local',
+      model: 'test',
+      chunkBudgetChars: 3000,
+      complete
+    })
+    const { createMeetingSummary } = await import('./meetingSummary')
+    const result = await createMeetingSummary({
+      recordingId: 'transcript',
+      analysis: { schemaVersion: 1, topics: [topic('분석 제목')] },
+      utterances: [
+        { speakerLabel: '화자 1', startSec: 12, text: '접근 권한부터 확인합시다.' },
+        { speakerLabel: '화자 2', startSec: 83, text: '테스트 절차도 필요합니다.' }
+      ]
+    })
+    expect(complete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: expect.stringContaining('접근 권한부터 확인합시다.'),
+        maxTokens: 1200
+      })
+    )
+    expect(complete.mock.calls[0][0].prompt).not.toContain('분석 제목')
+    expect(result.content.body).toContain('\n\n')
+    expect(result.rawResponses).toHaveLength(1)
+  })
 })

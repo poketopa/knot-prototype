@@ -1,12 +1,16 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import Summaries from './index'
 
-const { getSummariesApi } = vi.hoisted(() => ({ getSummariesApi: vi.fn() }))
+const { getSummariesApi, regenerateSummaryApi } = vi.hoisted(() => ({
+  getSummariesApi: vi.fn(),
+  regenerateSummaryApi: vi.fn()
+}))
 vi.mock('@renderer/shared/api/prototype', () => ({
   getSummariesApi,
+  regenerateSummaryApi,
   onPrototypeChanged: () => () => {}
 }))
 vi.mock('@renderer/shared/api/events', () => ({ onMeetingsChanged: () => () => {} }))
@@ -38,6 +42,7 @@ const showAt = (path: string) =>
 afterEach(() => {
   cleanup()
   getSummariesApi.mockReset()
+  regenerateSummaryApi.mockReset()
 })
 
 describe('meeting summaries page', () => {
@@ -59,5 +64,20 @@ describe('meeting summaries page', () => {
     getSummariesApi.mockResolvedValue([{ ...ready, status: 'empty', headline: '', body: '' }])
     showAt('/summaries/meeting-1')
     expect(await screen.findByText('정리할 내용이 없습니다.')).toBeTruthy()
+  })
+
+  it('전사에서 다시 정리하되 기존 결과를 유지하고 중복 클릭을 막는다', async () => {
+    getSummariesApi.mockResolvedValue([{ ...ready, refreshStatus: 'running' }])
+    showAt('/summaries/meeting-1')
+    const button = await screen.findByRole('button', { name: '다시 정리하는 중' })
+    expect((button as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByText(ready.body)).toBeTruthy()
+
+    cleanup()
+    getSummariesApi.mockResolvedValue([ready])
+    regenerateSummaryApi.mockResolvedValue(undefined)
+    showAt('/summaries/meeting-1')
+    fireEvent.click(await screen.findByRole('button', { name: '전사에서 다시 정리하기' }))
+    expect(regenerateSummaryApi).toHaveBeenCalledWith('meeting-1')
   })
 })

@@ -75,6 +75,7 @@ export const IPC = {
     logout: 'prototype:logout',
     listDocuments: 'prototype:documents:list',
     listSummaries: 'prototype:summaries:list',
+    regenerateSummary: 'prototype:summaries:regenerate',
     getDocument: 'prototype:documents:get',
     readTranscript: 'prototype:artifacts:readTranscript',
     getProcessing: 'prototype:processing:get',
@@ -374,6 +375,10 @@ export interface ReadPrototypeTranscriptRequest {
 export type ReadPrototypeTranscriptResponse = PrototypeTranscript | null
 
 export type GetPrototypeProcessingResponse = PrototypeProcessingItem[]
+
+export interface RegenerateMeetingSummaryRequest {
+  meetingId: string
+}
 
 export interface RetryPrototypeProcessingRequest {
   meetingId: string

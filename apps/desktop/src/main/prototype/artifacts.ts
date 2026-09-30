@@ -544,7 +544,7 @@ export const findPrototypeArtifact = ({
       `SELECT id, local_path, content_json, sha256, byte_length
        FROM prototype_artifacts
        WHERE owner_id = @ownerId AND recording_id = @recordingId AND kind = @kind
-       ORDER BY created_at DESC
+       ORDER BY created_at DESC, rowid DESC
        LIMIT 1`
     )
     .get({ ownerId: owner.id, recordingId, kind }) as

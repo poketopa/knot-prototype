@@ -24,7 +24,10 @@ vi.mock('../summary/run', () => ({ runTopicAnalysis: vi.fn() }))
 vi.mock('../summary/meetingSummary', () => ({ createMeetingSummary: vi.fn() }))
 vi.mock('../glossary/draft', () => ({ runGlossaryDraft: vi.fn() }))
 vi.mock('../prototype/documents', () => ({ listPrototypeDocuments: vi.fn(() => []) }))
-vi.mock('../prototype/meetingSummaries', () => ({ persistMeetingSummary: vi.fn() }))
+vi.mock('../prototype/meetingSummaries', () => ({
+  persistMeetingSummary: vi.fn(),
+  setMeetingSummaryRefreshState: vi.fn()
+}))
 vi.mock('../prototype/artifacts', () => ({
   findPrototypeArtifact: vi.fn(() => undefined),
   preserveAiFailureArtifact: vi.fn(async () => undefined),
@@ -35,6 +38,8 @@ describe('pipeline queue checkpoints', () => {
   beforeEach(async () => {
     vi.resetModules()
     vi.clearAllMocks()
+    const { findPrototypeArtifact } = await import('../prototype/artifacts')
+    vi.mocked(findPrototypeArtifact).mockImplementation(() => undefined)
     userDataDir = await mkdtemp(path.join(os.tmpdir(), 'meeting-stt-prototype-queue-'))
   })
 
@@ -42,6 +47,46 @@ describe('pipeline queue checkpoints', () => {
     const { closeDb } = await import('../db/connection')
     closeDb()
     await rm(userDataDir, { recursive: true, force: true })
+  })
+
+  it('기존 AI 분석을 다시 실행하지 않고 회의 정리만 새 산출물로 만든다', async () => {
+    const { getDb } = await import('../db/connection')
+    const { createMeetingSummary } = await import('../summary/meetingSummary')
+    const { runTopicAnalysis } = await import('../summary/run')
+    const { findPrototypeArtifact } = await import('../prototype/artifacts')
+    const { persistMeetingSummary, setMeetingSummaryRefreshState } =
+      await import('../prototype/meetingSummaries')
+    const { enqueueMeetingSummaryRegeneration, isPipelineQueueBusy } = await import('./queue')
+    getDb()
+      .prepare(
+        `INSERT INTO meetings (id, owner_id, title, created_at, duration_sec, status, audio_path)
+         VALUES ('meeting-refresh', 'owner-1', '회의', 1, 60, 'done', '/tmp/meeting.wav')`
+      )
+      .run()
+    vi.mocked(findPrototypeArtifact).mockImplementation(({ kind }) =>
+      kind === 'meeting_summary'
+        ? ({ id: 'old-summary' } as ReturnType<typeof findPrototypeArtifact>)
+        : kind === 'ai_analysis'
+          ? ({ content_json: JSON.stringify({ schemaVersion: 1, topics: [] }) } as ReturnType<
+              typeof findPrototypeArtifact
+            >)
+          : undefined
+    )
+    vi.mocked(createMeetingSummary).mockResolvedValue({
+      content: { schemaVersion: 1, headline: '핵심', body: '새 글' },
+      provider: 'local',
+      model: 'test',
+      rawResponses: []
+    })
+
+    enqueueMeetingSummaryRegeneration({ meetingId: 'meeting-refresh' })
+    await vi.waitFor(() => expect(persistMeetingSummary).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(isPipelineQueueBusy()).toBe(false))
+    expect(persistMeetingSummary).toHaveBeenCalledWith(
+      expect.objectContaining({ recordingId: 'meeting-refresh', allowRevision: true })
+    )
+    expect(runTopicAnalysis).not.toHaveBeenCalled()
+    expect(setMeetingSummaryRefreshState).toHaveBeenCalledWith('meeting-refresh')
   })
 
   it('queues a missing publish outbox for an existing analysis exactly once', async () => {

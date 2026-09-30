@@ -72,7 +72,12 @@ import type { ModelDownloadProgress } from '../models/download'
 import { isWhisperModelId } from '@meeting-stt/models/desktop'
 import { notifyMeetingsChanged } from '../meetingsChanged'
 import { downloadModels, downloadSummaryModel, modelStatus } from '../models/service'
-import { enqueueGlossaryDraft, enqueuePipelineJob, enqueueSummaryJob } from '../pipeline/queue'
+import {
+  enqueueGlossaryDraft,
+  enqueueMeetingSummaryRegeneration,
+  enqueuePipelineJob,
+  enqueueSummaryJob
+} from '../pipeline/queue'
 import { checkForUpdatesNow, downloadUpdate, installUpdate } from '../updater'
 import { requestRecordingCommand, showMainWindow } from '../windows/main'
 import { replaceGlobalShortcuts, setGlobalShortcutsSuspended } from '../windows/shortcuts'
@@ -400,6 +405,10 @@ export const registerIpcHandlers = () => {
   ipcMain.handle(IPC.prototype.listSummaries, (): ListPrototypeSummariesResponse =>
     listMeetingSummaries()
   )
+
+  ipcMain.handle(IPC.prototype.regenerateSummary, (_event, payload): void => {
+    enqueueMeetingSummaryRegeneration({ meetingId: readMeetingId(payload) })
+  })
 
   ipcMain.handle(
     IPC.prototype.getDocument,

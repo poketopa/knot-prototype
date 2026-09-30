@@ -64,6 +64,8 @@ export interface PrototypeMeetingSummary {
   body?: string
   error?: string
   hasTranscript: boolean
+  refreshStatus?: 'queued' | 'running'
+  refreshError?: string
 }
 
 export type PrototypeProcessingStage =

@@ -2,7 +2,11 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import type { PrototypeMeetingSummary } from '@shared/prototype'
 import { onMeetingsChanged } from '@renderer/shared/api/events'
-import { getSummariesApi, onPrototypeChanged } from '@renderer/shared/api/prototype'
+import {
+  getSummariesApi,
+  onPrototypeChanged,
+  regenerateSummaryApi
+} from '@renderer/shared/api/prototype'
 import TranscriptPanel from '@renderer/modules/widgets/prototype/TranscriptPanel'
 import { meetingDetailPath, PATHS, summaryDetailPath } from '@renderer/shared/routes/paths'
 import styles from './index.module.css'
@@ -24,6 +28,7 @@ export default function Summaries() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showTranscript, setShowTranscript] = useState(false)
+  const [refreshRequestError, setRefreshRequestError] = useState<string | null>(null)
   const [reload, setReload] = useState(0)
 
   useEffect(() => {
@@ -80,6 +85,32 @@ export default function Summaries() {
                 </div>
                 <h2>회의 전체 정리</h2>
                 <p className={styles.body}>{selected.body}</p>
+                {selected.hasTranscript && (
+                  <div className={styles.refresh}>
+                    <button
+                      type="button"
+                      disabled={Boolean(selected.refreshStatus)}
+                      onClick={async () => {
+                        setRefreshRequestError(null)
+                        try {
+                          await regenerateSummaryApi(selected.recordingId)
+                        } catch (caught) {
+                          setRefreshRequestError(
+                            caught instanceof Error ? caught.message : '다시 정리하지 못했어요.'
+                          )
+                        }
+                      }}
+                    >
+                      {selected.refreshStatus ? '다시 정리하는 중' : '전사에서 다시 정리하기'}
+                    </button>
+                    {selected.refreshStatus && (
+                      <p role="status">기존 정리본은 그대로 보관됩니다.</p>
+                    )}
+                    {(selected.refreshError || refreshRequestError) && (
+                      <p role="alert">{selected.refreshError ?? refreshRequestError}</p>
+                    )}
+                  </div>
+                )}
               </>
             ) : selected.status === 'empty' ? (
               <p className={styles.message}>정리할 내용이 없습니다.</p>
