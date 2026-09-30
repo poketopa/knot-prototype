@@ -366,6 +366,297 @@ describePg('prototype API with real PostgreSQL and limited runtime role', () => 
     ).toBe(0)
   })
 
+  it('backfills legacy contributions into stable one-recording tree documents', async () => {
+    const lateLegacyTranscriptId = '00000000-0000-4000-8000-000000000299'
+    await putJsonArtifact(
+      '00000000-0000-4000-8000-000000000101',
+      lateLegacyTranscriptId,
+      'transcript',
+      transcript(['late-legacy-u1'])
+    )
+    await setArtifactCreatedAt(lateLegacyTranscriptId, '2026-10-10T00:00:00.000Z')
+
+    const before = await migratorDb.query<{ count: number }>(
+      'SELECT count(*)::int FROM document_tree_documents WHERE user_id = $1',
+      [userId]
+    )
+    expect(before.rows[0].count).toBe(0)
+
+    const first = await app.inject({
+      method: 'GET',
+      url: '/v1/document-tree',
+      headers: authHeader()
+    })
+    expect(first.statusCode).toBe(200)
+
+    const second = await app.inject({
+      method: 'GET',
+      url: '/v1/document-tree',
+      headers: authHeader()
+    })
+    expect(second.statusCode).toBe(200)
+
+    const legacyRows = await migratorDb.query<{
+      id: string
+      recording_id: string
+      legacy_contribution_id: string
+    }>(
+      `SELECT id, recording_id, legacy_contribution_id
+       FROM document_tree_documents
+       WHERE user_id = $1 AND legacy_document_id = $2
+       ORDER BY recording_id`,
+      [userId, docA]
+    )
+    expect(legacyRows.rows).toHaveLength(2)
+    expect(legacyRows.rows[0].id).toBe(legacyTreeDocumentId(docA, legacyRows.rows[0].recording_id))
+    expect(new Set(legacyRows.rows.map((row) => row.legacy_contribution_id)).size).toBe(2)
+
+    const snapshots = await migratorDb.query<{ count: number }>(
+      'SELECT count(*)::int FROM document_tree_snapshots WHERE user_id = $1',
+      [userId]
+    )
+    expect(snapshots.rows[0].count).toBe(first.json().documents.length)
+    expect(second.json()).toEqual(first.json())
+
+    const legacyDetail = await app.inject({
+      method: 'GET',
+      url: `/v1/document-tree/${legacyRows.rows[0].id}`,
+      headers: authHeader()
+    })
+    expect(legacyDetail.statusCode).toBe(200)
+    expect(legacyDetail.json()).toMatchObject({
+      id: legacyRows.rows[0].id,
+      domain: 'A',
+      transcriptArtifactId: '00000000-0000-4000-8000-000000000201',
+      body: {
+        schemaVersion: 2,
+        summarySections: [expect.objectContaining({ heading: '핵심 내용' })],
+        outline: [
+          expect.objectContaining({
+            heading: '논의한 내용',
+            items: expect.arrayContaining([expect.objectContaining({ text: 'A 결정' })])
+          })
+        ]
+      }
+    })
+  })
+
+  it('publishes V2 topics as distinct tree documents with replay, rollback, and tenant isolation', async () => {
+    const r1 = '00000000-0000-4000-8000-000000001101'
+    const r2 = '00000000-0000-4000-8000-000000001102'
+    const t1 = '00000000-0000-4000-8000-000000001201'
+    const t2 = '00000000-0000-4000-8000-000000001202'
+    const lateT1 = '00000000-0000-4000-8000-000000001203'
+    const a1 = '00000000-0000-4000-8000-000000001301'
+    const a2 = '00000000-0000-4000-8000-000000001302'
+    const d1 = '00000000-0000-4000-8000-000000001401'
+    const d2 = '00000000-0000-4000-8000-000000001402'
+
+    await putRecording(r1, '2026-10-03T01:00:00.000Z')
+    await putJsonArtifact(r1, t1, 'transcript', transcript(['v2-r1-u1', 'v2-r1-u2']))
+    await setArtifactCreatedAt(t1, '2026-10-03T01:00:00.000Z')
+    await putJsonArtifact(r1, a1, 'ai_analysis', {
+      schemaVersion: 2,
+      topics: [v2Topic(d1, '제품', '녹음 파일 업로드와 처리 속도', ['v2-r1-u1', 'v2-r1-u2'])]
+    })
+    await setArtifactCreatedAt(a1, '2026-10-03T01:01:00.000Z')
+    await putJsonArtifact(r1, lateT1, 'transcript', transcript(['late-v2-u1']))
+    await setArtifactCreatedAt(lateT1, '2026-10-03T01:02:00.000Z')
+
+    const [first, second] = await Promise.all([publish(r1, a1), publish(r1, a1)])
+    expect(first.statusCode).toBe(200)
+    expect(second.statusCode).toBe(200)
+    expect(first.json()).toEqual(second.json())
+    expect(first.json().documents).toEqual([expect.objectContaining({ id: d1, latestVersion: 1 })])
+
+    await putRecording(r2, '2026-10-04T01:00:00.000Z')
+    await putJsonArtifact(r2, t2, 'transcript', transcript(['v2-r2-u1']))
+    await putJsonArtifact(r2, a2, 'ai_analysis', {
+      schemaVersion: 2,
+      topics: [v2Topic(d2, ' 제품 ', '녹음 파일 업로드와 처리 속도', ['v2-r2-u1'])]
+    })
+    const third = await publish(r2, a2, token, t2)
+    expect(third.statusCode).toBe(200)
+
+    const tree = await app.inject({
+      method: 'GET',
+      url: '/v1/document-tree',
+      headers: authHeader()
+    })
+    expect(tree.statusCode).toBe(200)
+    expect(tree.json().documents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: d1, domain: '제품', recordingId: r1, overview: '핵심 요약' }),
+        expect.objectContaining({ id: d2, domain: '제품', recordingId: r2, overview: '핵심 요약' })
+      ])
+    )
+
+    const detail = await app.inject({
+      method: 'GET',
+      url: `/v1/document-tree/${d1}`,
+      headers: authHeader()
+    })
+    expect(detail.statusCode).toBe(200)
+    expect(detail.json()).toMatchObject({
+      id: d1,
+      transcriptArtifactId: t1,
+      snapshotId: expect.any(String),
+      body: {
+        schemaVersion: 2,
+        summarySections: [
+          { heading: '먼저 구현할 방식', text: '핵심 요약', sourceUtteranceIds: ['v2-r1-u1'] }
+        ],
+        outline: [
+          {
+            heading: '논의 상세',
+            items: [{ text: '상세 논의', sourceUtteranceIds: ['v2-r1-u2'] }]
+          }
+        ]
+      }
+    })
+
+    const token2Tree = await app.inject({
+      method: 'GET',
+      url: '/v1/document-tree',
+      headers: authHeader(token2)
+    })
+    expect(token2Tree.statusCode).toBe(200)
+    expect(token2Tree.json().documents).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: d1 })])
+    )
+    const token2Detail = await app.inject({
+      method: 'GET',
+      url: `/v1/document-tree/${d1}`,
+      headers: authHeader(token2)
+    })
+    expect(token2Detail.statusCode).toBe(404)
+
+    const invalidRecordingId = '00000000-0000-4000-8000-000000001501'
+    const invalidTranscriptId = '00000000-0000-4000-8000-000000001502'
+    const invalidAnalysisId = '00000000-0000-4000-8000-000000001503'
+    const invalidDocumentId = '00000000-0000-4000-8000-000000001504'
+    await putRecording(invalidRecordingId, '2026-10-05T01:00:00.000Z')
+    await putJsonArtifact(invalidRecordingId, invalidTranscriptId, 'transcript', transcript(['ok']))
+    await putJsonArtifact(invalidRecordingId, invalidAnalysisId, 'ai_analysis', {
+      schemaVersion: 2,
+      topics: [v2Topic(invalidDocumentId, '제품', 'Invalid', ['missing'])]
+    })
+    const invalid = await publish(invalidRecordingId, invalidAnalysisId)
+    expect(invalid.statusCode).toBe(422)
+    expect(
+      await scalar(
+        'SELECT count(*)::int FROM document_tree_documents WHERE user_id = $1 AND id = $2',
+        [userId, invalidDocumentId]
+      )
+    ).toBe(0)
+
+    const emptyShapeRecordingId = '00000000-0000-4000-8000-000000001801'
+    const emptyShapeTranscriptId = '00000000-0000-4000-8000-000000001802'
+    const emptyShapeAnalysisId = '00000000-0000-4000-8000-000000001803'
+    const emptyShapeDocumentId = '00000000-0000-4000-8000-000000001804'
+    await putRecording(emptyShapeRecordingId, '2026-10-09T01:00:00.000Z')
+    await putJsonArtifact(
+      emptyShapeRecordingId,
+      emptyShapeTranscriptId,
+      'transcript',
+      transcript(['empty-shape-u1'])
+    )
+    await putJsonArtifact(emptyShapeRecordingId, emptyShapeAnalysisId, 'ai_analysis', {
+      schemaVersion: 2,
+      topics: [
+        {
+          documentId: emptyShapeDocumentId,
+          domain: '제품',
+          title: 'Empty',
+          summarySections: [],
+          outline: [
+            {
+              heading: '논의 상세',
+              items: [{ text: '상세 논의', sourceUtteranceIds: ['empty-shape-u1'] }]
+            }
+          ]
+        }
+      ]
+    })
+    const emptyShape = await publish(emptyShapeRecordingId, emptyShapeAnalysisId)
+    expect(emptyShape.statusCode).toBe(422)
+    expect(emptyShape.json()).toMatchObject({ code: 'AI_SUMMARY_SECTIONS_INVALID' })
+    expect(
+      await scalar(
+        'SELECT count(*)::int FROM document_tree_documents WHERE user_id = $1 AND id = $2',
+        [userId, emptyShapeDocumentId]
+      )
+    ).toBe(0)
+
+    const wrongKindRecordingId = '00000000-0000-4000-8000-000000001601'
+    const wrongKindTranscriptId = '00000000-0000-4000-8000-000000001602'
+    const wrongKindAnalysisId = '00000000-0000-4000-8000-000000001603'
+    const wrongKindDocumentId = '00000000-0000-4000-8000-000000001604'
+    await putRecording(wrongKindRecordingId, '2026-10-06T01:00:00.000Z')
+    await putJsonArtifact(
+      wrongKindRecordingId,
+      wrongKindTranscriptId,
+      'transcript',
+      transcript(['wrong-kind-u1'])
+    )
+    await putJsonArtifact(wrongKindRecordingId, wrongKindAnalysisId, 'ai_analysis', {
+      schemaVersion: 2,
+      topics: [v2Topic(wrongKindDocumentId, '제품', 'Wrong Kind', ['wrong-kind-u1'])]
+    })
+    const wrongKind = await publish(
+      wrongKindRecordingId,
+      wrongKindAnalysisId,
+      token,
+      wrongKindAnalysisId
+    )
+    expect(wrongKind.statusCode).toBe(422)
+    expect(
+      await scalar(
+        'SELECT count(*)::int FROM document_tree_documents WHERE user_id = $1 AND id = $2',
+        [userId, wrongKindDocumentId]
+      )
+    ).toBe(0)
+
+    const foreignRecordingId = '00000000-0000-4000-8000-000000001701'
+    const foreignTranscriptId = '00000000-0000-4000-8000-000000001702'
+    await putRecording(foreignRecordingId, '2026-10-07T01:00:00.000Z', token2)
+    await putJsonArtifact(
+      foreignRecordingId,
+      foreignTranscriptId,
+      'transcript',
+      transcript(['foreign-u1']),
+      token2
+    )
+    const foreignReferenceRecordingId = '00000000-0000-4000-8000-000000001711'
+    const foreignReferenceTranscriptId = '00000000-0000-4000-8000-000000001712'
+    const foreignReferenceAnalysisId = '00000000-0000-4000-8000-000000001713'
+    const foreignReferenceDocumentId = '00000000-0000-4000-8000-000000001714'
+    await putRecording(foreignReferenceRecordingId, '2026-10-08T01:00:00.000Z')
+    await putJsonArtifact(
+      foreignReferenceRecordingId,
+      foreignReferenceTranscriptId,
+      'transcript',
+      transcript(['foreign-ref-u1'])
+    )
+    await putJsonArtifact(foreignReferenceRecordingId, foreignReferenceAnalysisId, 'ai_analysis', {
+      schemaVersion: 2,
+      topics: [v2Topic(foreignReferenceDocumentId, '제품', 'Foreign', ['foreign-ref-u1'])]
+    })
+    const foreignReference = await publish(
+      foreignReferenceRecordingId,
+      foreignReferenceAnalysisId,
+      token,
+      foreignTranscriptId
+    )
+    expect(foreignReference.statusCode).toBe(422)
+    expect(
+      await scalar(
+        'SELECT count(*)::int FROM document_tree_documents WHERE user_id = $1 AND id = $2',
+        [userId, foreignReferenceDocumentId]
+      )
+    ).toBe(0)
+  })
+
   it('conceals artifacts, documents, events, and same document UUID across owners', async () => {
     const u2Recording = '00000000-0000-4000-8000-000000000501'
     const u2Transcript = '00000000-0000-4000-8000-000000000502'
@@ -565,6 +856,11 @@ describePg('prototype API with real PostgreSQL and limited runtime role', () => 
     await expect(runtimeDb.query('DELETE FROM document_snapshots')).rejects.toMatchObject({
       code: '42501'
     })
+    await expect(
+      runtimeDb.query("UPDATE document_tree_snapshots SET body = '{}'::jsonb")
+    ).rejects.toMatchObject({
+      code: '42501'
+    })
   })
 
   async function seedUser(id: string, githubId: string, displayName: string, sessionToken: string) {
@@ -633,12 +929,17 @@ describePg('prototype API with real PostgreSQL and limited runtime role', () => 
     expect(response.statusCode).toBe(200)
   }
 
-  async function publish(recordingId: string, analysisArtifactId: string, bearer = token) {
+  async function publish(
+    recordingId: string,
+    analysisArtifactId: string,
+    bearer = token,
+    transcriptArtifactId?: string
+  ) {
     return app.inject({
       method: 'POST',
       url: `/v1/recordings/${recordingId}/publish`,
       headers: authHeader(bearer),
-      payload: { analysisArtifactId }
+      payload: { analysisArtifactId, ...(transcriptArtifactId ? { transcriptArtifactId } : {}) }
     })
   }
 
@@ -649,6 +950,14 @@ describePg('prototype API with real PostgreSQL and limited runtime role', () => 
 
   function authHeader(bearer = token) {
     return { authorization: `Bearer ${bearer}` }
+  }
+
+  async function setArtifactCreatedAt(artifactId: string, createdAt: string) {
+    await migratorDb.query('UPDATE artifacts SET created_at = $1 WHERE user_id = $2 AND id = $3', [
+      createdAt,
+      userId,
+      artifactId
+    ])
   }
 })
 
@@ -695,6 +1004,43 @@ function topic(newDocumentId: string, title: string, sourceUtteranceIds: string[
     decisions: [{ text, sourceUtteranceIds }],
     unresolved: []
   }
+}
+
+function v2Topic(documentId: string, domain: string, title: string, sourceUtteranceIds: string[]) {
+  return {
+    documentId,
+    domain,
+    title,
+    summarySections: [
+      {
+        heading: '먼저 구현할 방식',
+        text: '핵심 요약',
+        sourceUtteranceIds: [sourceUtteranceIds[0]]
+      }
+    ],
+    outline: [
+      {
+        heading: '논의 상세',
+        items: [
+          {
+            text: '상세 논의',
+            sourceUtteranceIds: [sourceUtteranceIds[sourceUtteranceIds.length - 1]]
+          }
+        ]
+      }
+    ]
+  }
+}
+
+function legacyTreeDocumentId(sourceDocumentId: string, recordingId: string) {
+  const bytes = createHash('sha256')
+    .update(`legacy-document:${sourceDocumentId}:${recordingId}`)
+    .digest()
+    .subarray(0, 16)
+  bytes[6] = (bytes[6] & 0x0f) | 0x50
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  const hex = bytes.toString('hex')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }
 
 function sha256(value: Buffer) {

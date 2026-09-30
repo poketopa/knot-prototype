@@ -37,6 +37,27 @@ export async function migrate(connectionString = loadConfig().migrationDatabaseU
         client.release()
       }
     }
+    const documentTreeMigration = await db.query(
+      'SELECT 1 FROM schema_migrations WHERE version = $1',
+      ['003_document_tree_v2']
+    )
+    if (documentTreeMigration.rowCount === 0) {
+      const sql = await readFile(join(migrationsDir, '003_document_tree_v2.sql'), 'utf8')
+      const client = await db.connect()
+      try {
+        await client.query('BEGIN')
+        await client.query(sql)
+        await client.query('INSERT INTO schema_migrations (version) VALUES ($1)', [
+          '003_document_tree_v2'
+        ])
+        await client.query('COMMIT')
+      } catch (error) {
+        await client.query('ROLLBACK')
+        throw error
+      } finally {
+        client.release()
+      }
+    }
     await configureRuntimeRole(db)
   } finally {
     await db.end()
@@ -75,6 +96,12 @@ async function configureRuntimeRole(db: ReturnType<typeof createPool>) {
   )
   await db.query(
     `GRANT UPDATE (latest_snapshot_id, latest_version, updated_at) ON domain_documents TO ${quoteIdentifier(runtimeUser)}`
+  )
+  await db.query(
+    `GRANT UPDATE (name, updated_at) ON document_domains TO ${quoteIdentifier(runtimeUser)}`
+  )
+  await db.query(
+    `GRANT UPDATE (latest_snapshot_id, latest_version, updated_at) ON document_tree_documents TO ${quoteIdentifier(runtimeUser)}`
   )
   await db.query(
     `GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ${quoteIdentifier(runtimeUser)}`

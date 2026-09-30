@@ -84,7 +84,8 @@ export const publishRequestSchema = {
   type: 'object',
   required: ['analysisArtifactId'],
   properties: {
-    analysisArtifactId: uuid
+    analysisArtifactId: uuid,
+    transcriptArtifactId: uuid
   },
   ...noExtra
 } as const
@@ -96,6 +97,7 @@ export const aiDecisionItemSchema = {
     text: { type: 'string', minLength: 1 },
     sourceUtteranceIds: {
       type: 'array',
+      minItems: 1,
       items: { type: 'string', minLength: 1 },
       uniqueItems: true
     }
@@ -123,6 +125,69 @@ export const aiAnalysisV1Schema = {
   properties: {
     schemaVersion: { const: 1 },
     topics: { type: 'array', items: aiTopicSchema }
+  },
+  ...noExtra
+} as const
+
+export const aiSummarySectionSchema = {
+  type: 'object',
+  required: ['heading', 'text', 'sourceUtteranceIds'],
+  properties: {
+    heading: { type: 'string', minLength: 1, maxLength: 160 },
+    text: { type: 'string' },
+    sourceUtteranceIds: {
+      type: 'array',
+      minItems: 1,
+      items: { type: 'string', minLength: 1 },
+      uniqueItems: true
+    }
+  },
+  ...noExtra
+} as const
+
+export const aiOutlineItemSchema = {
+  type: 'object',
+  required: ['text', 'sourceUtteranceIds'],
+  properties: {
+    text: { type: 'string' },
+    sourceUtteranceIds: {
+      type: 'array',
+      items: { type: 'string', minLength: 1 },
+      uniqueItems: true
+    }
+  },
+  ...noExtra
+} as const
+
+export const aiOutlineSectionSchema = {
+  type: 'object',
+  required: ['heading', 'items'],
+  properties: {
+    heading: { type: 'string', minLength: 1, maxLength: 160 },
+    items: { type: 'array', minItems: 1, items: aiOutlineItemSchema }
+  },
+  ...noExtra
+} as const
+
+export const aiTopicV2Schema = {
+  type: 'object',
+  required: ['documentId', 'domain', 'title', 'summarySections', 'outline'],
+  properties: {
+    documentId: uuid,
+    domain: { type: 'string', minLength: 1, maxLength: 160 },
+    title: { type: 'string', minLength: 1, maxLength: 160 },
+    summarySections: { type: 'array', minItems: 1, items: aiSummarySectionSchema },
+    outline: { type: 'array', minItems: 1, items: aiOutlineSectionSchema }
+  },
+  ...noExtra
+} as const
+
+export const aiAnalysisV2Schema = {
+  type: 'object',
+  required: ['schemaVersion', 'topics'],
+  properties: {
+    schemaVersion: { const: 2 },
+    topics: { type: 'array', items: aiTopicV2Schema }
   },
   ...noExtra
 } as const

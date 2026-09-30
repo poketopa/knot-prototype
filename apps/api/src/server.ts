@@ -1,5 +1,5 @@
 import type { IncomingMessage } from 'node:http'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 
 import { validateAiAnalysis } from '@meeting-stt/prototype-contracts/validate'
 import {
@@ -12,6 +12,7 @@ import {
 } from '@meeting-stt/prototype-contracts/schemas'
 import type {
   AiAnalysisV1,
+  AiAnalysisV2,
   ArtifactPutRequest,
   AuthAttemptRequest,
   AuthExchangeRequest,
@@ -514,7 +515,13 @@ export function buildServer({
     { schema: { params: uuidParamSchema('id'), body: publishRequestSchema } },
     async (request) => {
       const user = await authenticate(db, request)
-      return publishRecording(db, user, request.params.id, request.body.analysisArtifactId)
+      return publishRecording(
+        db,
+        user,
+        request.params.id,
+        request.body.analysisArtifactId,
+        request.body.transcriptArtifactId
+      )
     }
   )
 
@@ -553,6 +560,64 @@ export function buildServer({
         updatedAt: row.updated_at.toISOString(),
         snapshotId: row.snapshot_id,
         body: row.body
+      }
+    }
+  )
+
+  app.get('/v1/document-tree', async (request) => {
+    const user = await authenticate(db, request)
+    await backfillLegacyDocumentTree(db, user.id)
+    const documents = await db.query<DocumentTreeItemRow>(
+      `SELECT d.id,
+              d.title,
+              d.overview,
+              d.recording_id,
+              d.recording_started_at,
+              d.latest_version,
+              d.updated_at,
+              dd.name AS domain
+       FROM document_tree_documents d
+       JOIN document_domains dd ON dd.user_id = d.user_id AND dd.id = d.domain_id
+       WHERE d.user_id = $1
+       ORDER BY dd.name ASC, d.recording_started_at DESC, d.title ASC`,
+      [user.id]
+    )
+    return { documents: documents.rows.map(mapDocumentTreeItem) }
+  })
+
+  app.get<{ Params: { id: string } }>(
+    '/v1/document-tree/:id',
+    { schema: { params: uuidParamSchema('id') } },
+    async (request) => {
+      const user = await authenticate(db, request)
+      await backfillLegacyDocumentTree(db, user.id)
+      const document = await db.query<DocumentTreeDetailRow>(
+        `SELECT d.id,
+                d.title,
+                d.overview,
+                d.recording_id,
+                d.recording_started_at,
+                d.latest_version,
+                d.updated_at,
+                d.transcript_artifact_id,
+                s.id AS snapshot_id,
+                s.body,
+                dd.name AS domain
+         FROM document_tree_documents d
+         JOIN document_domains dd ON dd.user_id = d.user_id AND dd.id = d.domain_id
+         JOIN document_tree_snapshots s ON s.user_id = d.user_id AND s.id = d.latest_snapshot_id
+         WHERE d.user_id = $1 AND d.id = $2`,
+        [user.id, request.params.id]
+      )
+      if (document.rowCount !== 1) {
+        throw new ApiError(404, 'DOCUMENT_NOT_FOUND', 'Document not found')
+      }
+      const row = document.rows[0]
+      return {
+        ...mapDocumentTreeItem(row),
+        body: row.body,
+        transcriptArtifactId: row.transcript_artifact_id,
+        snapshotId: row.snapshot_id
       }
     }
   )
@@ -707,7 +772,8 @@ async function publishRecording(
   db: Db,
   user: AuthenticatedUser,
   recordingId: string,
-  analysisArtifactId: string
+  analysisArtifactId: string,
+  transcriptArtifactId?: string
 ) {
   return withTransaction(db, async (client) => {
     await client.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [user.id])
@@ -743,12 +809,12 @@ async function publishRecording(
     if (analysis.rowCount !== 1 || analysis.rows[0].raw_content === null) {
       throw new ApiError(404, 'ANALYSIS_ARTIFACT_NOT_FOUND', 'Analysis artifact not found')
     }
-    const transcript = await client.query<ArtifactRow>(
-      `SELECT * FROM artifacts
-       WHERE user_id = $1 AND recording_id = $2 AND kind = 'transcript' AND completed_at IS NOT NULL
-       ORDER BY created_at DESC
-       LIMIT 1`,
-      [user.id, recordingId]
+    const transcript = await selectPublishTranscript(
+      client,
+      user.id,
+      recordingId,
+      analysis.rows[0],
+      transcriptArtifactId
     )
     if (transcript.rowCount !== 1 || transcript.rows[0].raw_content === null) {
       throw new ApiError(
@@ -759,8 +825,18 @@ async function publishRecording(
     }
 
     const utteranceIds = extractUtteranceIds(transcript.rows[0].raw_content)
-    const ai = validateAiAnalysis(analysis.rows[0].raw_content)
+    const ai = validatePublishAiAnalysis(analysis.rows[0].raw_content)
     validateSourceRefs(ai, utteranceIds)
+    if (ai.schemaVersion === 2) {
+      return publishRecordingV2({
+        client,
+        user,
+        recording: recording.rows[0],
+        transcript: transcript.rows[0],
+        analysisArtifactId,
+        ai
+      })
+    }
     const topics = mergeTopics(ai)
 
     for (const topic of topics) {
@@ -833,6 +909,198 @@ async function publishRecording(
   })
 }
 
+function validatePublishAiAnalysis(value: unknown) {
+  try {
+    return validateAiAnalysis(value)
+  } catch (error) {
+    throw new ApiError(
+      422,
+      error instanceof Error ? error.message : 'AI_RESULT_INVALID_SHAPE',
+      'AI analysis result is invalid'
+    )
+  }
+}
+
+async function selectPublishTranscript(
+  client: DbClient,
+  userId: string,
+  recordingId: string,
+  analysis: ArtifactRow,
+  transcriptArtifactId?: string
+) {
+  if (transcriptArtifactId) {
+    return client.query<ArtifactRow>(
+      `SELECT * FROM artifacts
+       WHERE user_id = $1
+         AND recording_id = $2
+         AND id = $3
+         AND kind = 'transcript'
+         AND completed_at IS NOT NULL`,
+      [userId, recordingId, transcriptArtifactId]
+    )
+  }
+  return client.query<ArtifactRow>(
+    `SELECT * FROM artifacts
+     WHERE user_id = $1
+       AND recording_id = $2
+       AND kind = 'transcript'
+       AND completed_at IS NOT NULL
+       AND created_at <= $3
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [userId, recordingId, analysis.created_at]
+  )
+}
+
+async function publishRecordingV2({
+  client,
+  user,
+  recording,
+  transcript,
+  analysisArtifactId,
+  ai
+}: {
+  client: DbClient
+  user: AuthenticatedUser
+  recording: RecordingRow
+  transcript: ArtifactRow
+  analysisArtifactId: string
+  ai: AiAnalysisV2
+}) {
+  const documents = []
+  const topicDocumentIds = new Set<string>()
+  for (const topic of ai.topics) {
+    if (topicDocumentIds.has(topic.documentId)) {
+      throw new ApiError(422, 'AI_TOPIC_DOCUMENT_ID_DUPLICATE', 'Topic document id is duplicated')
+    }
+    topicDocumentIds.add(topic.documentId)
+    const domainId = await upsertDocumentDomain(client, user.id, topic.domain)
+    const body = {
+      schemaVersion: 2,
+      summarySections: topic.summarySections,
+      outline: topic.outline
+    }
+    const overview = topic.summarySections[0]?.text
+    await client.query(
+      `INSERT INTO document_tree_documents (
+         id,
+         user_id,
+         domain_id,
+         title,
+         overview,
+         recording_id,
+         recording_started_at,
+         transcript_artifact_id,
+         analysis_artifact_id
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       ON CONFLICT (user_id, id) DO NOTHING`,
+      [
+        topic.documentId,
+        user.id,
+        domainId,
+        topic.title,
+        overview ?? null,
+        recording.id,
+        recording.started_at,
+        transcript.id,
+        analysisArtifactId
+      ]
+    )
+    const existing = await client.query<{
+      recording_id: string
+      transcript_artifact_id: string
+      analysis_artifact_id: string
+      latest_version: number
+      latest_snapshot_id: string | null
+      title: string
+      updated_at: Date
+    }>(
+      `SELECT recording_id,
+              transcript_artifact_id,
+              analysis_artifact_id,
+              latest_version,
+              latest_snapshot_id,
+              title,
+              updated_at
+       FROM document_tree_documents
+       WHERE user_id = $1 AND id = $2
+       FOR UPDATE`,
+      [user.id, topic.documentId]
+    )
+    if (existing.rowCount !== 1) {
+      throw new ApiError(404, 'DOCUMENT_NOT_FOUND', 'Document not found')
+    }
+    const existingRow = existing.rows[0]
+    if (
+      existingRow.recording_id !== recording.id ||
+      existingRow.transcript_artifact_id !== transcript.id ||
+      existingRow.analysis_artifact_id !== analysisArtifactId
+    ) {
+      throw new ApiError(
+        409,
+        'DOCUMENT_ID_ALREADY_USED',
+        'Document id is already bound to another recording'
+      )
+    }
+    if (existingRow.latest_version === 0) {
+      const snapshot = await client.query<{ id: string; created_at: Date }>(
+        `INSERT INTO document_tree_snapshots (
+           user_id,
+           document_id,
+           version,
+           body,
+           recording_id,
+           transcript_artifact_id,
+           analysis_artifact_id
+         )
+         VALUES ($1, $2, 1, $3, $4, $5, $6)
+         RETURNING id, created_at`,
+        [
+          user.id,
+          topic.documentId,
+          JSON.stringify(body),
+          recording.id,
+          transcript.id,
+          analysisArtifactId
+        ]
+      )
+      await client.query(
+        `UPDATE document_tree_documents
+         SET latest_snapshot_id = $1,
+             latest_version = 1,
+             updated_at = $2
+         WHERE user_id = $3 AND id = $4`,
+        [snapshot.rows[0].id, snapshot.rows[0].created_at, user.id, topic.documentId]
+      )
+      documents.push({
+        id: topic.documentId,
+        title: topic.title,
+        latestVersion: 1,
+        updatedAt: snapshot.rows[0].created_at.toISOString()
+      })
+      continue
+    }
+    documents.push({
+      id: topic.documentId,
+      title: existingRow.title,
+      latestVersion: existingRow.latest_version,
+      updatedAt: existingRow.updated_at.toISOString()
+    })
+  }
+  const response = { documents }
+  await client.query(
+    `INSERT INTO recording_publishes (user_id, recording_id, analysis_artifact_id, response)
+     VALUES ($1, $2, $3, $4)`,
+    [user.id, recording.id, analysisArtifactId, JSON.stringify(response)]
+  )
+  await client.query(
+    'UPDATE recordings SET published_analysis_id = $1 WHERE user_id = $2 AND id = $3',
+    [analysisArtifactId, user.id, recording.id]
+  )
+  return response
+}
+
 async function snapshotDocument(
   client: DbClient,
   userId: string,
@@ -898,17 +1166,22 @@ function mergeTopics(ai: AiAnalysisV1): AiAnalysisV1['topics'] {
   return [...map.values()]
 }
 
-function validateSourceRefs(ai: AiAnalysisV1, utteranceIds: Set<string>) {
-  for (const topic of ai.topics) {
-    for (const item of [...topic.decisions, ...topic.unresolved]) {
-      for (const sourceId of item.sourceUtteranceIds) {
-        if (!utteranceIds.has(sourceId)) {
-          throw new ApiError(
-            422,
-            'AI_SOURCE_UTTERANCE_ID_UNKNOWN',
-            `Unknown source utterance id: ${sourceId}`
-          )
-        }
+function validateSourceRefs(ai: AiAnalysisV1 | AiAnalysisV2, utteranceIds: Set<string>) {
+  const items =
+    ai.schemaVersion === 1
+      ? ai.topics.flatMap((topic) => [...topic.decisions, ...topic.unresolved])
+      : ai.topics.flatMap((topic) => [
+          ...topic.summarySections,
+          ...topic.outline.flatMap((section) => section.items)
+        ])
+  for (const item of items) {
+    for (const sourceId of item.sourceUtteranceIds) {
+      if (!utteranceIds.has(sourceId)) {
+        throw new ApiError(
+          422,
+          'AI_SOURCE_UTTERANCE_ID_UNKNOWN',
+          `Unknown source utterance id: ${sourceId}`
+        )
       }
     }
   }
@@ -974,13 +1247,228 @@ async function assertEventReferences(
   }
   if (refs.documentId) {
     const document = await db.query(
-      'SELECT id FROM domain_documents WHERE user_id = $1 AND id = $2',
+      `SELECT id FROM domain_documents WHERE user_id = $1 AND id = $2
+       UNION ALL
+       SELECT id FROM document_tree_documents WHERE user_id = $1 AND id = $2
+       LIMIT 1`,
       [user.id, refs.documentId]
     )
     if (document.rowCount !== 1) {
       throw new ApiError(404, 'DOCUMENT_NOT_FOUND', 'Document not found')
     }
   }
+}
+
+async function backfillLegacyDocumentTree(db: Db, userId: string) {
+  const contributions = await db.query<LegacyContributionRow>(
+    `SELECT c.id,
+            c.document_id,
+            c.recording_id,
+            c.analysis_artifact_id,
+            c.section,
+            c.created_at AS contribution_created_at,
+            d.title AS document_title,
+            r.started_at AS recording_started_at,
+            t.id AS transcript_artifact_id,
+            s.id AS legacy_snapshot_id
+     FROM document_contributions c
+     JOIN domain_documents d ON d.user_id = c.user_id AND d.id = c.document_id
+     JOIN recordings r ON r.user_id = c.user_id AND r.id = c.recording_id
+     JOIN LATERAL (
+       SELECT id
+       FROM artifacts
+       WHERE user_id = c.user_id
+         AND recording_id = c.recording_id
+         AND kind = 'transcript'
+         AND completed_at IS NOT NULL
+         AND created_at <= c.created_at
+       ORDER BY created_at DESC
+       LIMIT 1
+     ) t ON true
+     LEFT JOIN LATERAL (
+       SELECT id
+       FROM document_snapshots
+       WHERE user_id = c.user_id
+         AND document_id = c.document_id
+         AND trigger_recording_id = c.recording_id
+       ORDER BY version ASC
+       LIMIT 1
+     ) s ON true
+     WHERE c.user_id = $1
+       AND NOT EXISTS (
+         SELECT 1
+         FROM document_tree_documents td
+         WHERE td.user_id = c.user_id
+           AND td.legacy_contribution_id = c.id
+       )
+     ORDER BY r.started_at ASC, c.id ASC`,
+    [userId]
+  )
+  for (const contribution of contributions.rows) {
+    await withTransaction(db, async (client) => {
+      await client.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [userId])
+      const domainId = await upsertDocumentDomain(client, userId, contribution.document_title)
+      const documentId = legacyTreeDocumentId(contribution.document_id, contribution.recording_id)
+      const body = legacySectionToV2Body(contribution.section)
+      const overview = firstSummaryText(body)
+      await client.query(
+        `INSERT INTO document_tree_documents (
+           id,
+           user_id,
+           domain_id,
+           title,
+           overview,
+           recording_id,
+           recording_started_at,
+           transcript_artifact_id,
+           analysis_artifact_id,
+           legacy_document_id,
+           legacy_contribution_id
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         ON CONFLICT (user_id, legacy_contribution_id) DO NOTHING`,
+        [
+          documentId,
+          userId,
+          domainId,
+          contribution.document_title,
+          overview,
+          contribution.recording_id,
+          contribution.recording_started_at,
+          contribution.transcript_artifact_id,
+          contribution.analysis_artifact_id,
+          contribution.document_id,
+          contribution.id
+        ]
+      )
+      const document = await client.query<{ latest_version: number }>(
+        `SELECT latest_version
+         FROM document_tree_documents
+         WHERE user_id = $1 AND legacy_contribution_id = $2
+         FOR UPDATE`,
+        [userId, contribution.id]
+      )
+      if (document.rowCount !== 1 || document.rows[0].latest_version !== 0) {
+        return
+      }
+      const snapshot = await client.query<{ id: string; created_at: Date }>(
+        `INSERT INTO document_tree_snapshots (
+           user_id,
+           document_id,
+           version,
+           body,
+           recording_id,
+           transcript_artifact_id,
+           analysis_artifact_id,
+           legacy_snapshot_id
+         )
+         VALUES ($1, $2, 1, $3, $4, $5, $6, $7)
+         RETURNING id, created_at`,
+        [
+          userId,
+          documentId,
+          JSON.stringify(body),
+          contribution.recording_id,
+          contribution.transcript_artifact_id,
+          contribution.analysis_artifact_id,
+          contribution.legacy_snapshot_id
+        ]
+      )
+      await client.query(
+        `UPDATE document_tree_documents
+         SET latest_snapshot_id = $1,
+             latest_version = 1,
+             updated_at = $2
+         WHERE user_id = $3 AND legacy_contribution_id = $4`,
+        [snapshot.rows[0].id, snapshot.rows[0].created_at, userId, contribution.id]
+      )
+    })
+  }
+}
+
+async function upsertDocumentDomain(db: Pick<Db, 'query'>, userId: string, name: string) {
+  const displayName = name.trim()
+  const normalizedName = normalizeDomainName(displayName)
+  const domain = await db.query<{ id: string }>(
+    `INSERT INTO document_domains (user_id, name, normalized_name)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (user_id, normalized_name)
+     DO UPDATE SET name = document_domains.name, updated_at = document_domains.updated_at
+     RETURNING id`,
+    [userId, displayName, normalizedName]
+  )
+  return domain.rows[0].id
+}
+
+function normalizeDomainName(name: string) {
+  const normalized = name.trim().replace(/\s+/g, ' ').toLocaleLowerCase()
+  if (!normalized) {
+    throw new ApiError(422, 'AI_TOPIC_DOMAIN_REQUIRED', 'Topic domain is required')
+  }
+  return normalized
+}
+
+function legacyTreeDocumentId(sourceDocumentId: string, recordingId: string) {
+  return uuidFromSha256(`legacy-document:${sourceDocumentId}:${recordingId}`)
+}
+
+function uuidFromSha256(value: string) {
+  const bytes = createHash('sha256').update(value).digest().subarray(0, 16)
+  bytes[6] = (bytes[6] & 0x0f) | 0x50
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  const hex = bytes.toString('hex')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+function legacySectionToV2Body(section: unknown) {
+  const legacy = isRecord(section) ? section : {}
+  const overview = typeof legacy.overview === 'string' ? legacy.overview : ''
+  const decisions = legacyItems(legacy.decisions)
+  const unresolved = legacyItems(legacy.unresolved).map((item) => ({
+    ...item,
+    text: `아직 정해지지 않은 내용: ${item.text}`
+  }))
+  const items = [...decisions, ...unresolved]
+  const summarySourceIds = uniqueSourceIds(items)
+  const summaryText = overview || items.map((item) => item.text).join('\n')
+  return {
+    schemaVersion: 2 as const,
+    summarySections: summaryText
+      ? [{ heading: '핵심 내용', text: summaryText, sourceUtteranceIds: summarySourceIds }]
+      : [],
+    outline: items.length > 0 ? [{ heading: '논의한 내용', items }] : []
+  }
+}
+
+function legacyItems(value: unknown) {
+  if (!Array.isArray(value)) {
+    return []
+  }
+  return value.flatMap((item) => {
+    if (!isRecord(item) || typeof item.text !== 'string') {
+      return []
+    }
+    return [
+      {
+        text: item.text,
+        sourceUtteranceIds: Array.isArray(item.sourceUtteranceIds)
+          ? item.sourceUtteranceIds.filter((id): id is string => typeof id === 'string')
+          : []
+      }
+    ]
+  })
+}
+
+function uniqueSourceIds(items: Array<{ sourceUtteranceIds: string[] }>) {
+  return [...new Set(items.flatMap((item) => item.sourceUtteranceIds))]
+}
+
+function firstSummaryText(body: { summarySections: Array<{ text: string }> }) {
+  return body.summarySections[0]?.text
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 async function assertRecordingExists(
@@ -1055,6 +1543,19 @@ function mapDocumentSummary(row: DocumentSummaryRow) {
   }
 }
 
+function mapDocumentTreeItem(row: DocumentTreeItemRow) {
+  return {
+    id: row.id,
+    title: row.title,
+    domain: row.domain,
+    recordingId: row.recording_id,
+    recordingStartedAt: row.recording_started_at.toISOString(),
+    latestVersion: row.latest_version,
+    updatedAt: row.updated_at.toISOString(),
+    ...(row.overview ? { overview: row.overview } : {})
+  }
+}
+
 type RecordingRow = {
   id: string
   started_at: Date
@@ -1078,6 +1579,7 @@ type ArtifactRow = {
   prompt_version: string | null
   completed_at: Date | null
   content_hash: string
+  created_at: Date
   upload_status?: string | null
 }
 
@@ -1091,4 +1593,34 @@ type DocumentSummaryRow = {
 type DocumentDetailRow = DocumentSummaryRow & {
   snapshot_id: string
   body: unknown
+}
+
+type DocumentTreeItemRow = {
+  id: string
+  title: string
+  domain: string
+  overview: string | null
+  recording_id: string
+  recording_started_at: Date
+  latest_version: number
+  updated_at: Date
+}
+
+type DocumentTreeDetailRow = DocumentTreeItemRow & {
+  transcript_artifact_id: string
+  snapshot_id: string
+  body: unknown
+}
+
+type LegacyContributionRow = {
+  id: string
+  document_id: string
+  recording_id: string
+  analysis_artifact_id: string
+  section: unknown
+  contribution_created_at: Date
+  document_title: string
+  recording_started_at: Date
+  transcript_artifact_id: string
+  legacy_snapshot_id: string | null
 }

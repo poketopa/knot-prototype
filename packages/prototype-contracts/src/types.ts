@@ -93,6 +93,7 @@ export type UploadReceiptResponse = {
 
 export type PublishRequest = {
   analysisArtifactId: Uuid
+  transcriptArtifactId?: Uuid
 }
 
 export type AiDecisionItem = {
@@ -113,6 +114,37 @@ export type AiAnalysisV1 = {
   schemaVersion: 1
   topics: AiTopic[]
 }
+
+export type AiSummarySection = {
+  heading: string
+  text: string
+  sourceUtteranceIds: string[]
+}
+
+export type AiOutlineItem = {
+  text: string
+  sourceUtteranceIds: string[]
+}
+
+export type AiOutlineSection = {
+  heading: string
+  items: AiOutlineItem[]
+}
+
+export type AiTopicV2 = {
+  documentId: Uuid
+  domain: string
+  title: string
+  summarySections: AiSummarySection[]
+  outline: AiOutlineSection[]
+}
+
+export type AiAnalysisV2 = {
+  schemaVersion: 2
+  topics: AiTopicV2[]
+}
+
+export type AiAnalysis = AiAnalysisV1 | AiAnalysisV2
 
 export type DocumentSummary = {
   id: Uuid
@@ -138,6 +170,27 @@ export type DocumentDetail = DocumentSummary & {
 
 export type PublishResponse = {
   documents: DocumentSummary[]
+}
+
+export type DocumentTreeItem = {
+  id: Uuid
+  title: string
+  domain: string
+  recordingId: Uuid
+  recordingStartedAt: IsoDateTime
+  latestVersion: number
+  updatedAt: IsoDateTime
+  overview?: string
+}
+
+export type DocumentTreeDetail = DocumentTreeItem & {
+  body: {
+    schemaVersion: 2
+    summarySections: AiSummarySection[]
+    outline: AiOutlineSection[]
+  }
+  transcriptArtifactId: Uuid
+  snapshotId: Uuid
 }
 
 export type EventType =

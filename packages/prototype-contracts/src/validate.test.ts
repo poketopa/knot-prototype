@@ -38,6 +38,59 @@ describe('validateAiAnalysis', () => {
       })
     ).toThrow('AI_TOPIC_DOCUMENT_ID_AMBIGUOUS')
   })
+
+  it('keeps V1 source compatibility while requiring grounded V2 sections', () => {
+    expect(
+      validateAiAnalysis({
+        schemaVersion: 1,
+        topics: [
+          {
+            existingDocumentId: null,
+            newDocumentId: '550e8400-e29b-41d4-a716-446655440000',
+            title: 'A',
+            overview: '',
+            decisions: [{ text: 'legacy empty refs allowed', sourceUtteranceIds: [] }],
+            unresolved: []
+          }
+        ]
+      })
+    ).toMatchObject({ schemaVersion: 1 })
+
+    expect(() =>
+      validateAiAnalysis({
+        schemaVersion: 2,
+        topics: [
+          {
+            documentId: '550e8400-e29b-41d4-a716-446655440001',
+            domain: '제품',
+            title: 'A',
+            summarySections: [],
+            outline: [
+              {
+                heading: '논의',
+                items: [{ text: '상세', sourceUtteranceIds: ['u1'] }]
+              }
+            ]
+          }
+        ]
+      })
+    ).toThrow('AI_SUMMARY_SECTIONS_INVALID')
+
+    expect(() =>
+      validateAiAnalysis({
+        schemaVersion: 2,
+        topics: [
+          {
+            documentId: '550e8400-e29b-41d4-a716-446655440001',
+            domain: '제품',
+            title: 'A',
+            summarySections: [{ heading: '핵심', text: '요약', sourceUtteranceIds: [] }],
+            outline: [{ heading: '논의', items: [] }]
+          }
+        ]
+      })
+    ).toThrow('AI_SOURCE_UTTERANCE_IDS_INVALID')
+  })
 })
 
 describe('canonicalJson', () => {
