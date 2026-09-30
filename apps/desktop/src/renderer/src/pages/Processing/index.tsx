@@ -70,6 +70,7 @@ export function ProcessingContent({
   useEffect(() => {
     let isMounted = true
     const refresh = async () => {
+      setIsLoading(true)
       try {
         const jobs = (await getProcessingApi()) as ProcessingItemV2[]
         if (!isMounted) return
@@ -96,6 +97,7 @@ export function ProcessingContent({
               )
             )
         }
+        if (isMounted) setError(null)
       } catch (caught) {
         if (isMounted) setError(String(caught))
       } finally {
@@ -222,7 +224,10 @@ export function ProcessingContent({
             ))}
           </section>
         )}
-        {job?.stage === 'done' && documents.length === 0 && (
+        {isLoading && job?.stage === 'done' && documents.length === 0 && (
+          <p className={styles.saved}>생성된 문서를 불러오고 있어요.</p>
+        )}
+        {!isLoading && !error && job?.stage === 'done' && documents.length === 0 && (
           <p className={styles.saved}>
             추가할 주제별 논의가 없습니다. 원본과 AI 결과는 계속 보관합니다.
           </p>

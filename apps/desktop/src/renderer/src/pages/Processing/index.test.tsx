@@ -42,6 +42,41 @@ function renderProcessing(item: PrototypeProcessingItem) {
 }
 
 describe('processing status', () => {
+  it('does not claim an empty result while generated documents are still loading', async () => {
+    let resolveDocuments!: (documents: unknown[]) => void
+    getProcessingApi.mockResolvedValue([
+      { meetingId: 'meeting-1', title: '회의', stage: 'done', status: 'succeeded', saved: true }
+    ])
+    getDocumentsApi.mockReturnValue(new Promise((resolve) => (resolveDocuments = resolve)))
+    render(
+      <MemoryRouter initialEntries={['/processing/meeting-1']}>
+        <Routes>
+          <Route path="/processing/:meetingId" element={<Processing />} />
+        </Routes>
+      </MemoryRouter>
+    )
+    await screen.findByRole('heading', { name: '정리가 끝났어요' })
+    expect(screen.queryByText(/추가할 주제별 논의가 없습니다/)).toBeNull()
+    resolveDocuments([])
+    expect(await screen.findByText(/추가할 주제별 논의가 없습니다/)).toBeTruthy()
+  })
+
+  it('does not treat a document request failure as an empty result', async () => {
+    getProcessingApi.mockResolvedValue([
+      { meetingId: 'meeting-1', title: '회의', stage: 'done', status: 'succeeded', saved: true }
+    ])
+    getDocumentsApi.mockRejectedValue(new Error('문서를 불러오지 못했습니다'))
+    render(
+      <MemoryRouter initialEntries={['/processing/meeting-1']}>
+        <Routes>
+          <Route path="/processing/:meetingId" element={<Processing />} />
+        </Routes>
+      </MemoryRouter>
+    )
+    expect((await screen.findByRole('alert')).textContent).toContain('문서를 불러오지 못했습니다')
+    expect(screen.queryByText(/추가할 주제별 논의가 없습니다/)).toBeNull()
+  })
+
   it('shows active AI processing and the separate storage failure together', async () => {
     renderProcessing({
       meetingId: 'meeting-1',
