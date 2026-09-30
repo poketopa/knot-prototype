@@ -310,6 +310,99 @@ describe('runTopicAnalysis', () => {
     expect(files).toContain('topic-reduce-0-0.raw.txt')
     expect(files).not.toContain('attempt.json')
   })
+
+  it('합치기 결과가 같은 근거 개수로 세부 문구를 바꾸면 원래 구간 내용을 보존한다', async () => {
+    const complete = vi.fn<LlmClient['complete']>().mockImplementation(async (params) => {
+      if (!params.label.startsWith('topic-reduce-')) {
+        const sources = sourceIdsFromPrompt(params.prompt)
+        return JSON.stringify({
+          schemaVersion: 2,
+          topics: [
+            {
+              documentId: null,
+              domain: '프로덕트',
+              title: '녹음 파일 업로드와 처리 속도',
+              summarySections: sources.map((sourceId) => ({
+                heading: '먼저 구현할 방식',
+                text: `${params.label} 원래 핵심`,
+                sourceUtteranceIds: [sourceId]
+              })),
+              outline: [
+                {
+                  heading: '논의 상세',
+                  items: sources.map((sourceId) => ({
+                    text: `${params.label} 원래 이유와 대안`,
+                    sourceUtteranceIds: [sourceId]
+                  }))
+                }
+              ]
+            }
+          ]
+        })
+      }
+
+      const sources = sourceIdsFromReducePrompt(params.prompt)
+      return JSON.stringify({
+        schemaVersion: 2,
+        topics: [
+          {
+            documentId: null,
+            domain: '프로덕트',
+            title: '녹음 파일 업로드와 처리 속도',
+            summarySections: sources.map((sourceId) => ({
+              heading: '먼저 구현할 방식',
+              text: `${sourceId} 바뀐 핵심`,
+              sourceUtteranceIds: [sourceId]
+            })),
+            outline: [
+              {
+                heading: '논의 상세',
+                items: sources.map((sourceId) => ({
+                  text: `${sourceId} 바뀐 이유와 대안`,
+                  sourceUtteranceIds: [sourceId]
+                }))
+              }
+            ]
+          }
+        ]
+      })
+    })
+    createLlmClient.mockResolvedValue({
+      provider: 'local',
+      model: 'test',
+      chunkBudgetChars: 5000,
+      complete
+    })
+    const { runTopicAnalysis } = await loadRunTopicAnalysis()
+    const attempt = await runTopicAnalysis({
+      meetingId: 'substituted-detail',
+      documents: [],
+      onProgress: vi.fn(),
+      utterances: [
+        { id: 'u1', speakerLabel: '화자 1', text: '첫 번째 주제 회의. '.repeat(160) },
+        { id: 'u2', speakerLabel: '화자 2', text: '두 번째 주제 회의. '.repeat(160) }
+      ]
+    })
+
+    expect(attempt.result.schemaVersion).toBe(2)
+    if (attempt.result.schemaVersion !== 2) throw new Error('expected V2')
+    const topic = attempt.result.topics[0]
+    expect(topic.summarySections.map((section) => section.text)).toEqual([
+      'topic-chunk-0 원래 핵심',
+      'topic-chunk-1 원래 핵심'
+    ])
+    expect(topic.outline[0].items.map((item) => item.text)).toEqual([
+      'topic-chunk-0 원래 이유와 대안',
+      'topic-chunk-1 원래 이유와 대안'
+    ])
+    expect(topic.summarySections.map((section) => section.text).join('\n')).not.toContain(
+      '바뀐 핵심'
+    )
+    const [dir] = await attemptDirs('substituted-detail')
+    const files = await readdir(path.join(rootDir, 'ai-attempts', 'substituted-detail', dir.name))
+    expect(files).toContain('topic-reduce-0-0.preserved.json')
+  })
+
   it('실패 후 재시도는 성공한 구간을 재사용하고 모델이나 전사가 바뀌면 다시 읽는다', async () => {
     let fail = true
     const complete = vi.fn<LlmClient['complete']>().mockImplementation(async (params) => {

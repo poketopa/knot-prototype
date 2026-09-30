@@ -168,7 +168,9 @@ export const createMeetingSummary = async ({
 
   const client = await createLlmClient()
   const budget =
-    (client.provider === 'local' ? Math.min(client.chunkBudgetChars, 6000) : client.chunkBudgetChars) -
+    (client.provider === 'local'
+      ? Math.min(client.chunkBudgetChars, 6000)
+      : client.chunkBudgetChars) -
     Math.max(SYSTEM.length, NOTES_SYSTEM.length) -
     Math.max(INSTRUCTION.length, NOTES_INSTRUCTION.length, REDUCE_INSTRUCTION.length) -
     128
@@ -203,7 +205,9 @@ export const createMeetingSummary = async ({
   while (batchesOf(inputs, budget).length > 1) {
     const groups = batchesOf(inputs, budget)
     if (pass > 6) {
-      throw new Error('회의 정리의 입력 크기를 줄이지 못했습니다. 구간별 결과는 보관되어 있습니다. 더 큰 입력을 지원하는 AI로 다시 시도해 주세요')
+      throw new Error(
+        '회의 정리의 입력 크기를 줄이지 못했습니다. 구간별 결과는 보관되어 있습니다. 더 큰 입력을 지원하는 AI로 다시 시도해 주세요'
+      )
     }
     const previousSize = inputs.join('\n').length
     const notes: string[] = []
@@ -218,7 +222,9 @@ export const createMeetingSummary = async ({
       )
     }
     if (notes.join('\n').length >= previousSize) {
-      throw new Error('회의 정리의 입력 크기를 줄이지 못했습니다. 구간별 결과는 보관되어 있습니다. 더 큰 입력을 지원하는 AI로 다시 시도해 주세요')
+      throw new Error(
+        '회의 정리의 입력 크기를 줄이지 못했습니다. 구간별 결과는 보관되어 있습니다. 더 큰 입력을 지원하는 AI로 다시 시도해 주세요'
+      )
     }
     inputs = notes
     pass += 1
