@@ -149,4 +149,55 @@ describe('meeting-wide summary', () => {
     expect(complete.mock.calls[0][0].system).toContain('회의 이후의 구현 현황')
     expect(complete.mock.calls[0][0].prompt).not.toContain('회의 밖의 분석')
   })
+  it('긴 구간 메모가 각각 입력을 차지해도 압축을 시도한 뒤 전체 정리를 만든다', async () => {
+    const complete = vi.fn<LlmClient['complete']>().mockImplementation(async ({ label }) => {
+      if (label === 'meeting-final')
+        return '## 핵심 요약\n주요 논의를 정리했습니다.\n\n## 배경\n이유와 대안을 논의했습니다.'
+      if (label.startsWith('meeting-notes-0-')) return '주요 논의와 배경. '.repeat(100)
+      return '주요 논의와 배경, 이유와 대안을 검토했습니다.'
+    })
+    createLlmClient.mockResolvedValue({
+      provider: 'local',
+      model: 'test',
+      chunkBudgetChars: 1600,
+      complete
+    })
+    const { createMeetingSummary } = await import('./meetingSummary')
+    const result = await createMeetingSummary({
+      recordingId: 'verbose',
+      analysis: { schemaVersion: 1, topics: [] },
+      utterances: [
+        { speakerLabel: '화자 1', startSec: 0, text: '회의의 배경과 이유. '.repeat(200) }
+      ]
+    })
+    expect(complete.mock.calls.some(([p]) => p.label.startsWith('meeting-notes-1-'))).toBe(true)
+    expect(result.content.body).toContain('이유와 대안')
+  })
+
+  it('메모가 계속 커지면 반복을 멈추고 실제 응답 파일을 남긴다', async () => {
+    const complete = vi.fn<LlmClient['complete']>().mockResolvedValue('긴 메모. '.repeat(300))
+    createLlmClient.mockResolvedValue({
+      provider: 'local',
+      model: 'test',
+      chunkBudgetChars: 1600,
+      complete
+    })
+    const { createMeetingSummary } = await import('./meetingSummary')
+    await expect(
+      createMeetingSummary({
+        recordingId: 'nonshrinking',
+        analysis: { schemaVersion: 1, topics: [] },
+        utterances: [
+          { speakerLabel: '화자 1', startSec: 0, text: '회의의 배경과 이유. '.repeat(100) }
+        ]
+      })
+    ).rejects.toThrow('입력 크기를 줄이지 못했습니다')
+    expect(complete.mock.calls.length).toBeLessThan(50)
+    const [attempt] = await readdir(path.join(rootDir, 'meeting-summaries', 'nonshrinking'))
+    expect(
+      (await readdir(path.join(rootDir, 'meeting-summaries', 'nonshrinking', attempt))).some((f) =>
+        f.includes('meeting-notes-1')
+      )
+    ).toBe(true)
+  })
 })

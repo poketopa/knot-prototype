@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import {
   buildChunkPrompt,
   buildReducePrompt,
@@ -35,6 +35,7 @@ import { info, messageOf } from '../log'
 import { prototypeUserRoot } from '../prototype/authState'
 
 import { summaryWorkDir } from './paths'
+import { mergeTopicPartials } from './mergeTopicPartials'
 
 /** 구간 요약(map)이 전체 진행률에서 차지하는 몫. 나머지는 합치기(reduce) */
 const MAP_PERCENT = 80
@@ -188,6 +189,41 @@ const completeTopic = async ({
     if (!topicPromptFits(client, prompt)) {
       throw new Error('AI 분석 입력이 모델의 처리 범위를 넘었습니다. 원본 전사는 보관되어 있습니다')
     }
+    const cacheKey = JSON.stringify({
+      provider: client.provider,
+      model: client.model,
+      promptVersion: TOPIC_ANALYSIS_PROMPT_VERSION,
+      system: TOPIC_ANALYSIS_SYSTEM_PROMPT,
+      prompt
+    })
+    await writeFile(path.join(workDir, `${label}.input.json`), cacheKey, { flag: 'wx' })
+    // 같은 사용자·전사·분류 목록·모델·프롬프트로 실패한 시도에서 검증 가능한
+    // 구간 응답만 재사용한다. 전체 결과와 실패 응답은 캐시하지 않는다.
+    if (label.startsWith('topic-chunk-')) {
+      const parent = path.dirname(workDir)
+      const previousAttempts = await readdir(parent, { withFileTypes: true })
+      for (const entry of previousAttempts.filter((entry) => entry.isDirectory()).slice(-64)) {
+        const previousDir = path.join(parent, entry.name)
+        if (previousDir === workDir) continue
+        let raw: string
+        let result: TopicAnalysisResult
+        try {
+          if ((await readFile(path.join(previousDir, `${label}.input.json`), 'utf8')) !== cacheKey)
+            continue
+          raw = await readFile(path.join(previousDir, `${label}.raw.txt`), 'utf8')
+          result = parseTopicAnalysis({ raw, utterances, documents, createDocumentId: randomUUID })
+        } catch {
+          continue
+        }
+        await writeFile(path.join(workDir, `${label}.raw.txt`), raw, { flag: 'wx' })
+        await writeJson({
+          file: path.join(workDir, `${label}.reused.json`),
+          value: { previousAttempt: entry.name }
+        })
+        rawLabels.push(label)
+        return result
+      }
+    }
     const raw = await client.complete({
       system: TOPIC_ANALYSIS_SYSTEM_PROMPT,
       prompt,
@@ -319,7 +355,14 @@ const reduceTopics = async ({
     }
     if (batch.length) batches.push(batch)
     if (batches.every((items) => items.length === 1)) {
-      throw topicReconciliationError('모델의 입력 범위 초과')
+      // 긴 구간 결과를 다시 AI에 넣으려고 잘라내지 않는다. 명칭이 같은 주제만
+      // 연결하고 나머지는 별도 문서로 보존한다. 의미가 다른 제목을 임의로 합치지 않는다.
+      const result = mergeTopicPartials(level)
+      await writeJson({
+        file: path.join(workDir, 'topic-reduce-preserved.json'),
+        value: { strategy: 'exact-domain-title', round, result }
+      })
+      return result
     }
 
     const next: TopicAnalysisResult[] = []
@@ -343,8 +386,15 @@ const reduceTopics = async ({
         if ([...sourceIdsOf(items)].some((sourceId) => !preserved.has(sourceId))) {
           throw new Error('합치기 결과에서 기존 주제 내용의 근거가 누락되었습니다')
         }
-        if (sourcedLeafFingerprintsOf([result]).size < sourcedLeafFingerprintsOf(items).size) {
-          throw new Error('합치기 결과에서 기존 주제 세부사항이 누락되었습니다')
+        const preservedLeaves = sourcedLeafFingerprintsOf([result])
+        if ([...sourcedLeafFingerprintsOf(items)].some((leaf) => !preservedLeaves.has(leaf))) {
+          // 개수만 같다고 세부 내용이 보존된 것은 아니다. 재작성의 정확성을
+          // 확인할 수 없으면 원래 검증한 문구와 근거를 그대로 연결한다.
+          result = mergeTopicPartials(items)
+          await writeJson({
+            file: path.join(workDir, `topic-reduce-${round}-${index}.preserved.json`),
+            value: { strategy: 'preserve-original-leaves', result }
+          })
         }
       } catch (caught) {
         // 구간별 JSON과 실패 응답은 남기고, 세부사항을 확인하지 못한 결과는 확정하지 않는다.

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LlmClient } from '../llm/types'
 import {
   TOPIC_ANALYSIS_JSON_GRAMMAR,
+  TOPIC_ANALYSIS_PROMPT_VERSION,
   TOPIC_ANALYSIS_LOCAL_INPUT_CHARS,
   TOPIC_ANALYSIS_MAX_PREDICT_TOKENS
 } from '@shared/summary'
@@ -148,7 +149,7 @@ describe('runTopicAnalysis', () => {
     expect(failure).toMatchObject({
       provider: 'local',
       model: 'test-model',
-      promptVersion: 'topic-analysis-v3',
+      promptVersion: TOPIC_ANALYSIS_PROMPT_VERSION,
       error: '모델 실패'
     })
     expect(failure.diagnostics).toBeUndefined()
@@ -214,7 +215,7 @@ describe('runTopicAnalysis', () => {
     expect(attempt.result.schemaVersion).toBe(2)
     if (attempt.result.schemaVersion !== 2) throw new Error('expected V2')
     expect(attempt.result.topics[0]).toMatchObject({
-      domain: '개발',
+      domain: '프로덕트',
       title: '녹음 파일 업로드와 처리 속도'
     })
     expect(attempt.result.topics[0].documentId).toMatch(
@@ -308,5 +309,73 @@ describe('runTopicAnalysis', () => {
     expect(files.filter((file) => file.endsWith('.partial.json'))).toHaveLength(2)
     expect(files).toContain('topic-reduce-0-0.raw.txt')
     expect(files).not.toContain('attempt.json')
+  })
+  it('실패 후 재시도는 성공한 구간을 재사용하고 모델이나 전사가 바뀌면 다시 읽는다', async () => {
+    let fail = true
+    const complete = vi.fn<LlmClient['complete']>().mockImplementation(async (params) => {
+      if (params.label === 'topic-chunk-1' && fail) throw new Error('일시적인 연결 오류')
+      const sources = params.label.startsWith('topic-reduce-')
+        ? sourceIdsFromReducePrompt(params.prompt)
+        : sourceIdsFromPrompt(params.prompt)
+      return v2Topic({ sources })
+    })
+    const client = { provider: 'local' as const, model: 'test', chunkBudgetChars: 5000, complete }
+    createLlmClient.mockResolvedValue(client)
+    const { runTopicAnalysis } = await loadRunTopicAnalysis()
+    const input = {
+      meetingId: 'resume',
+      documents: [],
+      onProgress: vi.fn(),
+      utterances: [
+        { id: 'u1', speakerLabel: '화자 1', text: '첫 번째 주제 회의. '.repeat(160) },
+        { id: 'u2', speakerLabel: '화자 2', text: '두 번째 주제 회의. '.repeat(160) }
+      ]
+    }
+    await expect(runTopicAnalysis(input)).rejects.toThrow('일시적인 연결 오류')
+    fail = false
+    complete.mockClear()
+    await runTopicAnalysis(input)
+    expect(complete.mock.calls.some(([p]) => p.label === 'topic-chunk-0')).toBe(false)
+    expect(complete.mock.calls.some(([p]) => p.label === 'topic-chunk-1')).toBe(true)
+    complete.mockClear()
+    createLlmClient.mockResolvedValue({ ...client, model: 'different' })
+    await runTopicAnalysis(input)
+    expect(complete.mock.calls.some(([p]) => p.label === 'topic-chunk-0')).toBe(true)
+    complete.mockClear()
+    await runTopicAnalysis({
+      ...input,
+      utterances: input.utterances.map((u) => ({ ...u, text: u.text + ' 변경' }))
+    })
+    expect(complete.mock.calls.some(([p]) => p.label === 'topic-chunk-0')).toBe(true)
+  })
+
+  it('구간 응답이 너무 길어 병합 입력에 들어가지 않아도 모든 문서 내용을 보존한다', async () => {
+    const complete = vi.fn<LlmClient['complete']>().mockImplementation(async (params) => {
+      expect(params.label).not.toMatch(/^topic-reduce/)
+      const raw = JSON.parse(v2Topic({ sources: sourceIdsFromPrompt(params.prompt) }))
+      raw.topics[0].summarySections[0].text = '중요한 회의 논의와 이유. '.repeat(400)
+      return JSON.stringify(raw)
+    })
+    createLlmClient.mockResolvedValue({
+      provider: 'local',
+      model: 'test',
+      chunkBudgetChars: 5000,
+      complete
+    })
+    const { runTopicAnalysis } = await loadRunTopicAnalysis()
+    const result = await runTopicAnalysis({
+      meetingId: 'oversized',
+      documents: [],
+      onProgress: vi.fn(),
+      utterances: [
+        { id: 'u1', speakerLabel: '화자 1', text: '첫 번째 주제 회의. '.repeat(160) },
+        { id: 'u2', speakerLabel: '화자 2', text: '두 번째 주제 회의. '.repeat(160) }
+      ]
+    })
+    expect(result.result.topics).toHaveLength(1)
+    if (result.result.schemaVersion !== 2) throw new Error('expected V2')
+    expect(result.result.topics[0].summarySections[0].sourceUtteranceIds).toEqual(['u1', 'u2'])
+    expect(result.result.topics[0].summarySections[0].text.length).toBeGreaterThan(4000)
+    expect(result.rawResponses).toHaveLength(2)
   })
 })

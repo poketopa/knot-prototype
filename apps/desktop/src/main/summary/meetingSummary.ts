@@ -168,7 +168,7 @@ export const createMeetingSummary = async ({
 
   const client = await createLlmClient()
   const budget =
-    Math.min(client.chunkBudgetChars, 6000) -
+    (client.provider === 'local' ? Math.min(client.chunkBudgetChars, 6000) : client.chunkBudgetChars) -
     Math.max(SYSTEM.length, NOTES_SYSTEM.length) -
     Math.max(INSTRUCTION.length, NOTES_INSTRUCTION.length, REDUCE_INSTRUCTION.length) -
     128
@@ -202,19 +202,23 @@ export const createMeetingSummary = async ({
   let pass = 1
   while (batchesOf(inputs, budget).length > 1) {
     const groups = batchesOf(inputs, budget)
-    if (groups.length >= inputs.length) {
-      throw new Error('회의 전체 정리를 합칠 수 없습니다. 구간별 AI 결과는 보관되어 있습니다')
+    if (pass > 6) {
+      throw new Error('회의 정리의 입력 크기를 줄이지 못했습니다. 구간별 결과는 보관되어 있습니다. 더 큰 입력을 지원하는 AI로 다시 시도해 주세요')
     }
+    const previousSize = inputs.join('\n').length
     const notes: string[] = []
     for (const [index, group] of groups.entries()) {
       notes.push(
         await complete(
           `meeting-notes-${pass}-${index}`,
           NOTES_SYSTEM,
-          `${REDUCE_INSTRUCTION}${group}`,
+          `${REDUCE_INSTRUCTION}중복 표현을 제거하고 ${Math.max(200, Math.floor(budget / (groups.length + 1)))}자 이내로 압축하세요. 중요한 논의의 사실과 이유는 유지하세요.\n\n${group}`,
           MEETING_NOTES_MAX_TOKENS
         )
       )
+    }
+    if (notes.join('\n').length >= previousSize) {
+      throw new Error('회의 정리의 입력 크기를 줄이지 못했습니다. 구간별 결과는 보관되어 있습니다. 더 큰 입력을 지원하는 AI로 다시 시도해 주세요')
     }
     inputs = notes
     pass += 1
