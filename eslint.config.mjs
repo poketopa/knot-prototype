@@ -12,7 +12,7 @@ export default defineConfig(
       '**/dist',
       '**/out',
       'apps/desktop/scripts/fixtures',
-      '.local/**',
+      '**/.local/**',
       'apps/desktop/.prototype-smoke.cjs'
     ]
   },
