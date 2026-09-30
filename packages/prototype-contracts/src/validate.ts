@@ -134,7 +134,7 @@ function validateSummarySections(value: unknown) {
 }
 
 function validateOutline(value: unknown) {
-  if (!Array.isArray(value) || value.length === 0) {
+  if (!Array.isArray(value)) {
     throw new Error('AI_OUTLINE_INVALID')
   }
   return value.map((section) => {

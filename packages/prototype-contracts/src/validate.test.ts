@@ -93,6 +93,27 @@ describe('validateAiAnalysis', () => {
   })
 })
 
+describe('short conversation analysis', () => {
+  it('accepts a sourced summary without inventing outline details', () => {
+    expect(
+      validateAiAnalysis({
+        schemaVersion: 2,
+        topics: [
+          {
+            documentId: '550e8400-e29b-41d4-a716-446655440001',
+            domain: '일상',
+            title: '짧은 대화',
+            summarySections: [
+              { heading: '대화 내용', text: '오늘의 안부를 나눴어요.', sourceUtteranceIds: ['u1'] }
+            ],
+            outline: []
+          }
+        ]
+      })
+    ).toMatchObject({ schemaVersion: 2, topics: [{ outline: [] }] })
+  })
+})
+
 describe('canonicalJson', () => {
   it('orders object keys consistently', () => {
     expect(canonicalJson({ b: 1, a: { d: 2, c: 3 } })).toBe('{"a":{"c":3,"d":2},"b":1}')
