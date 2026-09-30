@@ -43,7 +43,7 @@ function renderProcessing(item: PrototypeProcessingItem) {
 
 describe('processing status', () => {
   it('does not claim an empty result while generated documents are still loading', async () => {
-    let resolveDocuments!: (documents: unknown[]) => void
+    let resolveDocuments!: (documents: never[]) => void
     getProcessingApi.mockResolvedValue([
       { meetingId: 'meeting-1', title: '회의', stage: 'done', status: 'succeeded', saved: true }
     ])
