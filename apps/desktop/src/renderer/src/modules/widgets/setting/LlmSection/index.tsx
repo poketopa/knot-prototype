@@ -178,9 +178,8 @@ export default function LlmSection({
     <SettingGroup title="AI 정리">
       <div className={styles.body}>
         <p className={styles.hint}>
-          주제별 결정과 미결정 사항을 정리할 AI를 고릅니다. 회의록 작성(음성 인식·화자 분리)은 어느
-          쪽을 골라도 이 기기에서만 처리합니다. 진행 중인 요약에는 적용되지 않고 다음 요약부터
-          바뀝니다.
+          주제별 문서 초안을 만들 AI를 고릅니다. 회의록 작성(음성 인식·화자 분리)은 어느 쪽을 골라도
+          이 기기에서만 처리합니다. 진행 중인 요약에는 적용되지 않고 다음 요약부터 바뀝니다.
         </p>
         {renderBody()}
       </div>

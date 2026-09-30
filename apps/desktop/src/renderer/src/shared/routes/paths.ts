@@ -2,15 +2,13 @@
 export const PATHS = {
   home: '/',
   record: '/record',
-  recordingHistory: '/recordings',
-  summaries: '/summaries',
-  summaryDetail: '/summaries/:recordingId',
   documentDetail: '/documents/:documentId',
   meetingDetail: '/meetings/:meetingId',
+  processing: '/processing/:meetingId',
   settings: '/settings'
 } as const
 
 export const meetingDetailPath = ({ meetingId }: { meetingId: string }) => `/meetings/${meetingId}`
+export const processingPath = ({ meetingId }: { meetingId: string }) => `/processing/${meetingId}`
 
 export const documentDetailPath = (documentId: string) => `/documents/${documentId}`
-export const summaryDetailPath = (recordingId: string) => `/summaries/${recordingId}`

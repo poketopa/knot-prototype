@@ -67,7 +67,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
         <p className={styles.description}>
           녹음하면 주제별로 정리해요.
           <br />
-          확정된 결정과 아직 남은 질문을 한곳에서 확인하세요.
+          회의마다 남긴 맥락을 문서에서 이어서 확인하세요.
         </p>
         <button className={styles.login} onClick={() => void login()} disabled={isPending || !auth}>
           {isPending

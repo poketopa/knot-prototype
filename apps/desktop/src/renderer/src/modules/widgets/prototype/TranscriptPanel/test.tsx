@@ -74,6 +74,31 @@ describe('TranscriptPanel', () => {
     expect(screen.queryByText(/이전 회의 원문입니다/)).toBeNull()
   })
 
+  it('artifactId가 바뀌면 이전 원문을 숨기고 정확한 artifact로 다시 요청한다', async () => {
+    let resolveNext: (value: PrototypeTranscript) => void = () => {}
+    vi.mocked(getTranscriptApi)
+      .mockResolvedValueOnce(transcript('r1', '첫 artifact 원문입니다.'))
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveNext = resolve
+          })
+      )
+
+    const { rerender } = render(<TranscriptPanel recordingId="r1" artifactId="artifact-a" />)
+    expect(await screen.findByText(/첫 artifact 원문입니다/)).toBeTruthy()
+
+    rerender(<TranscriptPanel recordingId="r1" artifactId="artifact-b" />)
+
+    expect(screen.queryByText(/첫 artifact 원문입니다/)).toBeNull()
+    expect(screen.getByRole('status').textContent).toContain('원문을 불러오고 있어요')
+    expect(getTranscriptApi).toHaveBeenLastCalledWith('r1', 'artifact-b')
+
+    resolveNext(transcript('r1', '두 번째 artifact 원문입니다.'))
+
+    expect(await screen.findByText(/두 번째 artifact 원문입니다/)).toBeTruthy()
+  })
+
   it('응답에 녹음 시간이 있으면 날짜 옆 배지로 표시한다', async () => {
     vi.mocked(getTranscriptApi).mockResolvedValue({
       ...transcript('r1', '시간 배지가 있는 원문입니다.'),

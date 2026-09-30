@@ -27,9 +27,9 @@ afterEach(cleanup)
 describe('AppShellLayout navigation', () => {
   it.each([
     ['/documents/doc-1', '문서'],
-    ['/meetings/meeting-1', '녹음 이력'],
+    ['/processing/meeting-1', '녹음'],
+    ['/meetings/meeting-1', '녹음'],
     ['/record', '녹음'],
-    ['/summaries/recording-1', '정리'],
     ['/settings', '설정']
   ])('keeps the parent menu active at %s', async (path, label) => {
     render(
@@ -39,5 +39,14 @@ describe('AppShellLayout navigation', () => {
     )
     expect(screen.getByRole('link', { name: label }).getAttribute('aria-current')).toBe('page')
     expect(await screen.findByText('Tester')).toBeTruthy()
+  })
+
+  it('shows only the approved top-level navigation entries', async () => {
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <AppShellLayout />
+      </MemoryRouter>
+    )
+    expect(screen.getByRole('navigation', { name: '주 메뉴' }).textContent).toBe('문서녹음설정')
   })
 })

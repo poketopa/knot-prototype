@@ -1,27 +1,111 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router'
-import type { PrototypeDocumentDetail } from '@shared/prototype'
-import { getDocumentApi, onPrototypeChanged, trackApi } from '@renderer/shared/api/prototype'
-import { writeClipboardTextApi } from '@renderer/shared/api/clipboard'
+import { useParams } from 'react-router'
+import type { PrototypeDocumentDetail, PrototypeDocumentListItem } from '@shared/prototype'
+import {
+  getDocumentApi,
+  getDocumentsApi,
+  onPrototypeChanged,
+  trackApi
+} from '@renderer/shared/api/prototype'
 import TranscriptPanel from '@renderer/modules/widgets/prototype/TranscriptPanel'
-import { PATHS } from '@renderer/shared/routes/paths'
+import DocumentTree, {
+  type DocumentTreeItem
+} from '@renderer/modules/widgets/prototype/DocumentTree'
 import styles from './index.module.css'
 
-const formatDateTime = (value: string) =>
-  new Date(value).toLocaleString('ko-KR', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
+type DocumentSummarySection = {
+  heading: string
+  text: string
+  sourceUtteranceIds?: string[]
+}
 
-const formatDate = (value: string) =>
-  new Date(value).toLocaleDateString('ko-KR', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric'
-  })
+type DocumentOutlineItem = {
+  text: string
+  sourceUtteranceIds?: string[]
+}
+
+type DocumentOutlineSection = {
+  heading: string
+  items: DocumentOutlineItem[]
+}
+
+type PrototypeDocumentDetailV2 = PrototypeDocumentDetail & {
+  domain?: string
+  recordingId?: string
+  recordingStartedAt?: string
+  transcriptArtifactId?: string
+  durationSec?: number
+  summarySections?: DocumentSummarySection[]
+  outline?: DocumentOutlineSection[]
+}
+
+const formatDateTime = (value?: string) =>
+  value
+    ? new Date(value).toLocaleString('ko-KR', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    : '날짜 없음'
+
+const formatDate = (value?: string) =>
+  value
+    ? new Date(value).toLocaleDateString('ko-KR', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      })
+    : '날짜 없음'
+
+const formatDuration = (sec?: number) => {
+  if (!sec || sec < 1) return null
+  const minutes = Math.floor(sec / 60)
+  const seconds = sec % 60
+  return minutes > 0 ? `${minutes}분 ${seconds}초` : `${seconds}초`
+}
+
+const fallbackSummarySections = (document: PrototypeDocumentDetailV2): DocumentSummarySection[] => {
+  if (document.summarySections?.length) return document.summarySections
+  const latest = document.contributions.at(-1)
+  if (!latest) return []
+  const texts = [
+    latest.section.overview,
+    ...latest.section.decisions.map((item) => item.text),
+    ...latest.section.unresolved.map((item) => item.text)
+  ].filter(Boolean)
+  return texts.length
+    ? [
+        {
+          heading: formatDate(latest.startedAt),
+          text: texts.join('\n')
+        }
+      ]
+    : []
+}
+
+const fallbackOutline = (document: PrototypeDocumentDetailV2): DocumentOutlineSection[] => {
+  if (document.outline?.length) return document.outline
+  return document.contributions
+    .map((entry) => {
+      const items = [
+        ...entry.section.decisions.map((item) => item.text),
+        ...entry.section.unresolved.map((item) => item.text)
+      ].filter(Boolean)
+      return {
+        heading: formatDate(entry.startedAt),
+        items: items.map((text) => ({ text }))
+      }
+    })
+    .filter((section) => section.items.length > 0)
+}
+
+const recordingIdFor = (document: PrototypeDocumentDetailV2) =>
+  document.recordingId ?? document.contributions.at(-1)?.recordingId ?? null
+
+const recordingStartedAtFor = (document: PrototypeDocumentDetailV2) =>
+  document.recordingStartedAt ?? document.contributions.at(-1)?.startedAt
 
 export default function DocumentDetail() {
   const { documentId } = useParams()
@@ -30,24 +114,29 @@ export default function DocumentDetail() {
 }
 
 function DocumentContent({ documentId }: { documentId: string }) {
-  const [document, setDocument] = useState<PrototypeDocumentDetail | null>(null)
+  const [catalog, setCatalog] = useState<DocumentTreeItem[]>([])
+  const [document, setDocument] = useState<PrototypeDocumentDetailV2 | null>(null)
   const [recordingId, setRecordingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [isCopied, setIsCopied] = useState(false)
   const viewedVersion = useRef<number | null>(null)
   const initialized = useRef(false)
   useEffect(() => {
     let isMounted = true
     const refresh = async () => {
       try {
-        const next = await getDocumentApi(documentId)
+        const [next, nextCatalog] = await Promise.all([
+          getDocumentApi(documentId),
+          getDocumentsApi()
+        ])
         if (!isMounted) return
         if (!next) throw new Error('문서를 찾을 수 없습니다.')
-        setDocument(next)
+        const typed = next as PrototypeDocumentDetailV2
+        setDocument(typed)
+        setCatalog(nextCatalog as Array<PrototypeDocumentListItem & DocumentTreeItem>)
         setError(null)
-        if (viewedVersion.current !== next.version) {
-          viewedVersion.current = next.version
-          void trackApi({ eventType: 'document_viewed', documentId, version: next.version }).catch(
+        if (viewedVersion.current !== typed.version) {
+          viewedVersion.current = typed.version
+          void trackApi({ eventType: 'document_viewed', documentId, version: typed.version }).catch(
             () => {}
           )
         }
@@ -55,7 +144,7 @@ function DocumentContent({ documentId }: { documentId: string }) {
           initialized.current = true
           const preference = localStorage.getItem('knot-transcript-open')
           if (preference === 'yes' || (preference === null && window.innerWidth >= 1400)) {
-            setRecordingId(next.contributions.at(-1)?.recordingId ?? null)
+            setRecordingId(recordingIdFor(typed))
           }
         }
       } catch (caught) {
@@ -71,29 +160,23 @@ function DocumentContent({ documentId }: { documentId: string }) {
       unsubscribe()
     }
   }, [documentId])
-  useEffect(() => {
-    if (!isCopied) return
-    const timer = setTimeout(() => setIsCopied(false), 3000)
-    return () => clearTimeout(timer)
-  }, [isCopied])
-  const copy = async () => {
-    if (!document) return
-    try {
-      await writeClipboardTextApi({ text: document.body })
-      setIsCopied(true)
-      void trackApi({ eventType: 'copied', documentId, version: document.version }).catch(() => {})
-    } catch {
-      setError('복사하지 못했어요. 다시 시도해 주세요.')
-    }
-  }
+
   const openTranscript = (id: string | null) => {
     setRecordingId(id)
     localStorage.setItem('knot-transcript-open', id ? 'yes' : 'no')
   }
-  const latestContribution = document?.contributions.at(-1) ?? null
+
+  const transcriptId = document ? recordingIdFor(document) : null
   const transcriptToggleLabel = recordingId ? '원문 닫기' : '원문 보기'
+  const summarySections = document ? fallbackSummarySections(document) : []
+  const outline = document ? fallbackOutline(document) : []
+  const startedAt = document ? recordingStartedAtFor(document) : undefined
+  const duration = document ? formatDuration(document.durationSec) : null
+  const transcriptArtifactId = document?.transcriptArtifactId
+
   return (
     <div className={`${styles.layout} ${recordingId ? styles.withTranscript : ''}`}>
+      <DocumentTree documents={catalog} activeDocumentId={documentId} />
       {document && (
         <button
           className={styles.transcriptToggle}
@@ -101,10 +184,8 @@ function DocumentContent({ documentId }: { documentId: string }) {
           title={transcriptToggleLabel}
           aria-label={transcriptToggleLabel}
           aria-expanded={Boolean(recordingId)}
-          disabled={document.contributions.length === 0}
-          onClick={() =>
-            openTranscript(recordingId ? null : (latestContribution?.recordingId ?? null))
-          }
+          disabled={!transcriptId}
+          onClick={() => openTranscript(recordingId ? null : transcriptId)}
         >
           <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
             {recordingId ? (
@@ -129,9 +210,6 @@ function DocumentContent({ documentId }: { documentId: string }) {
         </button>
       )}
       <article className={styles.document}>
-        <Link className={styles.breadcrumb} to={PATHS.home}>
-          문서 <span>›</span> {document?.title}
-        </Link>
         {error && (
           <p className={styles.error} role="alert">
             {error}
@@ -141,67 +219,65 @@ function DocumentContent({ documentId }: { documentId: string }) {
           <p role="status">문서를 불러오고 있어요.</p>
         ) : (
           <>
-            <div className={styles.toolbar}>
-              <button onClick={() => void copy()}>{isCopied ? '복사됨' : '복사'}</button>
-            </div>
+            <p className={styles.domain}>{document.domain ?? '분류 없음'}</p>
             <h1>{document.title}</h1>
             <p className={styles.meta}>
-              {latestContribution
-                ? `${formatDate(latestContribution.startedAt)} 업데이트`
-                : '아직 기록 없음'}
-              <span>{document.contributions.length}회 기록</span>
+              <time dateTime={startedAt}>{formatDateTime(startedAt)}</time>
+              {duration && <span>{duration}</span>}
             </p>
             {document.offline && (
               <p role="status" className={styles.historical}>
                 서버에 연결할 수 없어 이 Mac에 보관한 버전 {document.version}을 보여드려요.
               </p>
             )}
-            {document.contributions.map((entry) => (
-              <section className={styles.contribution} key={entry.recordingId}>
-                <div className={styles.date}>
-                  <h2>{formatDateTime(entry.startedAt)}</h2>
-                  <button onClick={() => openTranscript(entry.recordingId)}>이 회의 원문</button>
-                </div>
-                {entry.section.overview && (
-                  <p className={styles.overview}>{entry.section.overview}</p>
-                )}
-                <h3>
-                  <span className={styles.confirmedDot} />
-                  확정된 결정
-                </h3>
-                {entry.section.decisions.length ? (
-                  <ul>
-                    {entry.section.decisions.map((item, i) => (
-                      <li key={i}>{item.text}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className={styles.none}>이 회의에서 확정된 결정은 없어요.</p>
-                )}
-                <h3>
-                  <span className={styles.openDot} />
-                  미결정 사항
-                </h3>
-                {entry.section.unresolved.length ? (
-                  <ul>
-                    {entry.section.unresolved.map((item, i) => (
-                      <li key={i}>{item.text}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className={styles.none}>이 회의에서 남긴 미결정 사항은 없어요.</p>
-                )}
-                <p className={styles.historical}>
-                  이 회의 당시의 기록입니다. 이후 결정은 다음 회의 구역에 이어집니다.
-                </p>
+            <section className={styles.summary} aria-label="문서 요약">
+              {summarySections.length === 0 ? (
+                <p className={styles.none}>아직 표시할 요약이 없습니다.</p>
+              ) : (
+                summarySections.map((section, index) => (
+                  <section className={styles.summarySection} key={`${section.heading}-${index}`}>
+                    <h2>{section.heading}</h2>
+                    <p>{section.text}</p>
+                  </section>
+                ))
+              )}
+            </section>
+            {outline.length > 0 && (
+              <section className={styles.outline} aria-label="논의 상세">
+                <h2 className={styles.outlineTitle}>논의 상세</h2>
+                {outline.map((section, sectionIndex) => (
+                  <section
+                    className={styles.outlineSection}
+                    key={`${section.heading}-${sectionIndex}`}
+                  >
+                    <h3>{section.heading}</h3>
+                    <ul>
+                      {section.items.map((item, itemIndex) => (
+                        <li key={`${item.text}-${itemIndex}`}>{item.text}</li>
+                      ))}
+                    </ul>
+                  </section>
+                ))}
               </section>
-            ))}
+            )}
+            {transcriptId && (
+              <button
+                className={styles.inlineTranscript}
+                onClick={() => openTranscript(transcriptId)}
+              >
+                이 녹음 원문 보기
+              </button>
+            )}
           </>
         )}
       </article>
       {recordingId && (
         <div className={styles.transcript}>
-          <TranscriptPanel key={recordingId} recordingId={recordingId} />
+          <TranscriptPanel
+            key={`${recordingId}:${transcriptArtifactId ?? ''}`}
+            recordingId={recordingId}
+            artifactId={transcriptArtifactId}
+          />
         </div>
       )}
     </div>

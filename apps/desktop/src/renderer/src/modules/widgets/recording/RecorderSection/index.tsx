@@ -74,8 +74,8 @@ export default function RecorderSection() {
         <div className={styles.intro}>
           <h1>지금의 대화를 기록해요</h1>
           <p>
-            녹음이 끝나면 전사 원본과 AI 정리본을 저장하고, 주제별 문서에 결정과 남은 질문을
-            누적합니다.
+            녹음이 끝나면 전사 원본과 AI 정리본을 저장하고, 주제별 핵심과 논의 상세를 문서로
+            만듭니다.
           </p>
         </div>
 

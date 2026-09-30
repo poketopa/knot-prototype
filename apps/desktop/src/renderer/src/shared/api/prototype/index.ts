@@ -9,8 +9,8 @@ export const regenerateSummaryApi = (meetingId: string) =>
   window.api.prototype.regenerateSummary({ meetingId })
 export const getDocumentApi = (documentId: string) =>
   window.api.prototype.getDocument({ documentId })
-export const getTranscriptApi = (recordingId: string) =>
-  window.api.prototype.readTranscript({ recordingId })
+export const getTranscriptApi = (recordingId: string, artifactId?: string) =>
+  window.api.prototype.readTranscript(artifactId ? { recordingId, artifactId } : { recordingId })
 export const getProcessingApi = () => window.api.prototype.getProcessing()
 export const retryProcessingApi = (meetingId: string) => window.api.prototype.retry({ meetingId })
 export const trackApi = (event: PrototypeTrackEventRequest) => window.api.prototype.track(event)

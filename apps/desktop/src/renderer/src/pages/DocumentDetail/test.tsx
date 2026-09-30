@@ -3,23 +3,43 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router'
-import type { PrototypeDocumentDetail } from '@shared/prototype'
 
 vi.mock('@renderer/shared/api/prototype', () => ({
   getDocumentApi: vi.fn(),
+  getDocumentsApi: vi.fn(),
   getTranscriptApi: vi.fn(),
   trackApi: vi.fn().mockResolvedValue(undefined),
   onPrototypeChanged: vi.fn(() => () => {})
 }))
-vi.mock('@renderer/shared/api/clipboard', () => ({ writeClipboardTextApi: vi.fn() }))
-import { getDocumentApi, getTranscriptApi, trackApi } from '@renderer/shared/api/prototype'
-import { writeClipboardTextApi } from '@renderer/shared/api/clipboard'
+import {
+  getDocumentApi,
+  getDocumentsApi,
+  getTranscriptApi,
+  trackApi
+} from '@renderer/shared/api/prototype'
 import DocumentDetail from './index'
-const document: PrototypeDocumentDetail = {
+const document = {
   id: 'topic-a',
   title: '회원 탈퇴 정책',
+  domain: '계정',
+  recordingId: 'r2',
+  recordingStartedAt: '2026-09-21T10:00:00Z',
+  durationSec: 305,
   version: 2,
   body: '# 회원 탈퇴 정책\n\n## 첫 회의\n기록',
+  summarySections: [
+    {
+      heading: '핵심 요약',
+      text: '댓글과 첨부파일 보관 정책을 정했다.',
+      sourceUtteranceIds: ['u3']
+    }
+  ],
+  outline: [
+    {
+      heading: '보관 정책',
+      items: [{ text: '댓글과 첨부파일은 탈퇴 뒤에도 보관한다.', sourceUtteranceIds: ['u3'] }]
+    }
+  ],
   contributions: [
     {
       recordingId: 'r1',
@@ -40,7 +60,16 @@ const document: PrototypeDocumentDetail = {
       }
     }
   ]
-}
+} as never
+const catalog = [
+  {
+    id: 'topic-a',
+    title: '회원 탈퇴 정책',
+    domain: '계정',
+    latestVersion: 2,
+    updatedAt: '2026-09-21T10:00:00Z'
+  }
+] as never
 const mount = () =>
   render(
     <MemoryRouter initialEntries={['/documents/topic-a']}>
@@ -54,63 +83,61 @@ afterEach(() => {
   vi.clearAllMocks()
   localStorage.clear()
 })
-describe('주제별 누적 문서', () => {
-  it('이전 회의의 미결정을 보존하며 다음 회의 결정을 구분하고 전체 Markdown을 복사한다', async () => {
+describe('주제별 문서', () => {
+  it('도메인 트리와 고정 템플릿 없는 동적 요약·목차를 표시한다', async () => {
     vi.mocked(getDocumentApi).mockResolvedValue(document)
-    vi.mocked(writeClipboardTextApi).mockResolvedValue(undefined)
+    vi.mocked(getDocumentsApi).mockResolvedValue(catalog)
     localStorage.setItem('knot-transcript-open', 'no')
     mount()
-    expect(await screen.findByText('댓글은 보관한다')).toBeTruthy()
-    expect(screen.getByText('2회 기록')).toBeTruthy()
-    expect(screen.queryByText(/주제별 누적 문서/)).toBeNull()
+    expect(await screen.findByText('댓글과 첨부파일 보관 정책을 정했다.')).toBeTruthy()
+    expect(screen.getAllByText('계정')).toHaveLength(2)
+    expect(screen.getByText('5분 5초')).toBeTruthy()
+    expect(screen.queryByText('2번째 기록')).toBeNull()
+    expect(screen.getByRole('heading', { name: '논의 상세' })).toBeTruthy()
+    expect(screen.getByText('보관 정책')).toBeTruthy()
+    expect(screen.getByText('댓글과 첨부파일은 탈퇴 뒤에도 보관한다.')).toBeTruthy()
+    expect(screen.queryByText('원문 u3')).toBeNull()
+    expect(screen.queryByRole('heading', { name: '확정된 결정' })).toBeNull()
+    expect(screen.queryByRole('heading', { name: '미결정 사항' })).toBeNull()
     expect(screen.queryByText(/버전 2/)).toBeNull()
     const transcriptToggle = screen.getByRole('button', { name: '원문 보기' })
     expect(transcriptToggle.getAttribute('title')).toBe('원문 보기')
     expect(transcriptToggle.getAttribute('aria-expanded')).toBe('false')
-    expect(screen.getByText('첨부파일 보관 여부')).toBeTruthy()
-    expect(screen.getByText('첨부파일도 보관한다')).toBeTruthy()
-    expect(screen.getAllByRole('heading', { name: '확정된 결정' })).toHaveLength(2)
     expect(screen.queryByRole('textbox')).toBeNull()
-    await userEvent.click(screen.getByRole('button', { name: '복사' }))
-    expect(writeClipboardTextApi).toHaveBeenCalledWith({ text: document.body })
-    expect(await screen.findByRole('button', { name: '복사됨' })).toBeTruthy()
-    expect(trackApi).toHaveBeenCalledWith({
-      eventType: 'copied',
-      documentId: 'topic-a',
-      version: 2
-    })
   })
   it('선택한 회의의 전사 전체를 읽기 전용으로 표시한다', async () => {
     vi.mocked(getDocumentApi).mockResolvedValue(document)
+    vi.mocked(getDocumentsApi).mockResolvedValue(catalog)
     vi.mocked(getTranscriptApi).mockResolvedValue({
-      recordingId: 'r1',
-      title: '첫 회의',
-      startedAt: '2026-09-20T10:00:00Z',
+      recordingId: 'r2',
+      title: '두 번째 회의',
+      startedAt: '2026-09-21T10:00:00Z',
       utterances: [
         {
-          id: 'u1',
-          meetingId: 'r1',
+          id: 'u3',
+          meetingId: 'r2',
           ord: 0,
-          startSec: 15,
-          endSec: 20,
+          startSec: 30,
+          endSec: 40,
           speakerLabel: 's0',
-          text: '댓글은 남겨두기로 합시다.'
+          text: '첨부파일도 보관하기로 했습니다.'
         }
       ]
     })
     localStorage.setItem('knot-transcript-open', 'no')
     mount()
-    await screen.findByText('댓글은 보관한다')
-    await userEvent.click(screen.getAllByRole('button', { name: '이 회의 원문' })[0])
-    expect(await screen.findByText(/댓글은 남겨두기로 합시다/)).toBeTruthy()
-    expect(getTranscriptApi).toHaveBeenCalledWith('r1')
+    await screen.findByText('댓글과 첨부파일 보관 정책을 정했다.')
+    await userEvent.click(screen.getByRole('button', { name: '이 녹음 원문 보기' }))
+    expect(await screen.findByText(/첨부파일도 보관하기로 했습니다/)).toBeTruthy()
+    expect(getTranscriptApi).toHaveBeenCalledWith('r2')
     await waitFor(() =>
-      expect(trackApi).toHaveBeenCalledWith({ eventType: 'transcript_viewed', recordingId: 'r1' })
+      expect(trackApi).toHaveBeenCalledWith({ eventType: 'transcript_viewed', recordingId: 'r2' })
     )
     expect(screen.queryByRole('textbox')).toBeNull()
   })
   it('상단 원문 토글로 최신 회의 원문을 열고 닫는다', async () => {
     vi.mocked(getDocumentApi).mockResolvedValue(document)
+    vi.mocked(getDocumentsApi).mockResolvedValue(catalog)
     vi.mocked(getTranscriptApi).mockResolvedValue({
       recordingId: 'r2',
       title: '두 번째 회의',
@@ -130,7 +157,7 @@ describe('주제별 누적 문서', () => {
     localStorage.setItem('knot-transcript-open', 'no')
     mount()
 
-    await screen.findByText('첨부파일도 보관한다')
+    await screen.findByText('댓글과 첨부파일 보관 정책을 정했다.')
     const openButton = screen.getByRole('button', { name: '원문 보기' })
     expect(openButton.getAttribute('title')).toBe('원문 보기')
 
@@ -150,10 +177,43 @@ describe('주제별 누적 문서', () => {
     )
   })
 
+  it('문서가 지정한 정확한 전사 artifact를 원문 패널에 전달한다', async () => {
+    vi.mocked(getDocumentApi).mockResolvedValue({
+      ...(document as object),
+      transcriptArtifactId: 'artifact-r2'
+    } as never)
+    vi.mocked(getDocumentsApi).mockResolvedValue(catalog)
+    vi.mocked(getTranscriptApi).mockResolvedValue({
+      recordingId: 'r2',
+      title: '두 번째 회의',
+      startedAt: '2026-09-21T10:00:00Z',
+      utterances: [
+        {
+          id: 'u3',
+          meetingId: 'r2',
+          ord: 0,
+          startSec: 30,
+          endSec: 40,
+          speakerLabel: 's0',
+          text: 'artifact에서 읽은 원문입니다.'
+        }
+      ]
+    })
+    localStorage.setItem('knot-transcript-open', 'no')
+    mount()
+    await screen.findByText('댓글과 첨부파일 보관 정책을 정했다.')
+
+    await userEvent.click(screen.getByRole('button', { name: '원문 보기' }))
+
+    expect(await screen.findByText(/artifact에서 읽은 원문입니다/)).toBeTruthy()
+    expect(getTranscriptApi).toHaveBeenCalledWith('r2', 'artifact-r2')
+  })
+
   it('존재하지 않는 문서에서 데이터 대신 명확한 오류를 표시한다', async () => {
     vi.mocked(getDocumentApi).mockResolvedValue(null)
+    vi.mocked(getDocumentsApi).mockResolvedValue([])
     mount()
     expect(await screen.findByRole('alert')).toBeTruthy()
-    expect(screen.queryByText('댓글은 보관한다')).toBeNull()
+    expect(screen.queryByText('댓글과 첨부파일 보관 정책을 정했다.')).toBeNull()
   })
 })

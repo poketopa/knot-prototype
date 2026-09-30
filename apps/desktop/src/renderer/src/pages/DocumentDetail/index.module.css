@@ -1,11 +1,9 @@
 .layout {
   display: flex;
   flex: 1;
-  gap: 36px;
   width: 100%;
   min-height: 0;
-  padding: 28px 40px 56px;
-  overflow: auto;
+  overflow: hidden;
   color: var(--color-text, #262624);
   background: var(--color-bg, #faf9f7);
 }
@@ -15,37 +13,17 @@
   max-width: 100%;
   min-width: 0;
   margin: 0 auto;
+  padding: 48px 40px 80px;
   flex-shrink: 1;
+  overflow-y: auto;
   overflow-wrap: anywhere;
 }
 
-.breadcrumb {
-  display: block;
-  margin-bottom: 18px;
+.domain {
+  margin: 0 0 10px;
   color: var(--color-text-muted, #8b8882);
   font-size: 13px;
-  text-decoration: none;
-}
-
-.breadcrumb span {
-  margin: 0 10px;
-}
-
-.toolbar {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin: 10px 0 24px;
-}
-
-.toolbar button {
-  padding: 10px 16px;
-  border: 1px solid var(--color-border, #e9e6e1);
-  border-radius: 999px;
-  color: var(--color-text, #262624);
-  background: #fff;
-  font-size: 14px;
-  cursor: pointer;
+  font-weight: 600;
 }
 
 .transcriptToggle {
@@ -83,9 +61,9 @@
 }
 
 .document h1 {
-  margin: 18px 0 10px;
+  margin: 0 0 10px;
   color: var(--color-text, #262624);
-  font-size: var(--font-title, 24px);
+  font-size: 30px;
   font-weight: 650;
   line-height: 1.35;
   letter-spacing: 0;
@@ -98,6 +76,7 @@
   margin: 0 0 32px;
   color: var(--color-text-muted, #8b8882);
   font-size: 13px;
+  flex-wrap: wrap;
 }
 
 .meta span {
@@ -112,74 +91,61 @@
   font-size: 12px;
 }
 
-.contribution {
-  padding: 0 0 28px;
-  margin-bottom: 26px;
-  border-bottom: 1px solid var(--color-border, #e9e6e1);
-}
-
-.date {
+.summary {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
+  flex-direction: column;
+  gap: 18px;
+  padding-bottom: 28px;
+  border-bottom: 1px solid var(--color-divider, #efeeeb);
 }
 
-.date h2 {
+.summarySection h2 {
+  margin: 0 0 10px;
+  font-size: 18px;
+  font-weight: 650;
+}
+
+.summarySection p {
   margin: 0;
-  color: var(--color-text-muted, #8b8882);
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.date button {
-  border: 0;
-  color: var(--color-text-muted, #8b8882);
-  background: none;
-  font-size: 12px;
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-.overview {
-  margin: 18px 0 0;
   color: var(--color-text, #262624);
-  font-size: var(--font-md, 16px);
-  line-height: 1.75;
+  font-size: 16px;
+  line-height: 1.8;
+  white-space: pre-line;
 }
 
-.contribution h3 {
+.outline {
   display: flex;
-  align-items: center;
-  gap: 9px;
-  margin: 22px 0 10px;
-  color: var(--color-text, #262624);
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 28px;
+}
+
+.outlineTitle {
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 650;
+}
+
+.outlineSection {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--color-divider, #efeeeb);
+}
+
+.outlineSection h3 {
+  margin: 0;
   font-size: 16px;
   font-weight: 650;
 }
 
-.confirmedDot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #578772;
-}
-
-.openDot {
-  width: 7px;
-  height: 7px;
-  border: 1.5px solid #c49b58;
-  border-radius: 50%;
-}
-
-.contribution ul {
+.outline ul {
+  margin: 14px 0 0;
   padding-left: 20px;
   color: var(--color-text, #262624);
   font-size: var(--font-md, 16px);
   line-height: 1.75;
 }
 
-.contribution li {
+.outline li {
   margin: 7px 0;
   padding-left: 2px;
 }
@@ -195,11 +161,20 @@
   font-size: 12px;
 }
 
+.inlineTranscript {
+  margin-top: 28px;
+  padding: 10px 14px;
+  border: 1px solid var(--color-border, #e9e6e1);
+  border-radius: 8px;
+  color: var(--color-text, #262624);
+  background: var(--color-surface, #fff);
+  cursor: pointer;
+}
+
 .transcript {
-  position: sticky;
-  top: 0;
   width: 400px;
-  height: calc(100vh - 160px);
+  height: 100%;
+  padding: 28px 28px 28px 0;
   flex-shrink: 0;
 }
 
@@ -222,6 +197,10 @@
 
 @media (max-width: 750px) {
   .layout {
-    padding: 24px;
+    flex-direction: column;
+  }
+  .document {
+    width: 100%;
+    padding: 28px 24px 56px;
   }
 }

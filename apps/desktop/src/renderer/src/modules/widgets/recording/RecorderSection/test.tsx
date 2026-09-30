@@ -52,7 +52,7 @@ describe('RecorderSection', () => {
     expect(screen.getByText('대기 중')).toBeTruthy()
     expect(screen.getByRole('meter', { name: '마이크 입력 세기' })).toBeTruthy()
     expect(screen.getByRole('heading', { name: '지금의 대화를 기록해요' })).toBeTruthy()
-    expect(screen.getByText(/전사 원본과 AI 정리본을 저장/)).toBeTruthy()
+    expect(screen.getByText(/주제별 핵심과 논의 상세를 문서로/)).toBeTruthy()
   })
 
   it('녹음 시작을 누르면 main에 시작 명령을 보낸다', async () => {

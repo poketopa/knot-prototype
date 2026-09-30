@@ -2,12 +2,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
-import { getDocumentsApi, getProcessingApi } from '@renderer/shared/api/prototype'
+import { getDocumentsApi } from '@renderer/shared/api/prototype'
 import Documents from './index'
 
 vi.mock('@renderer/shared/api/prototype', () => ({
   getDocumentsApi: vi.fn(),
-  getProcessingApi: vi.fn(),
   onPrototypeChanged: () => () => {}
 }))
 afterEach(() => {
@@ -16,40 +15,46 @@ afterEach(() => {
 })
 
 describe('Documents', () => {
-  it('shows a topic overview, saved contribution count and detail link', async () => {
+  it('groups documents by reusable domain and links leaves to document detail', async () => {
     vi.mocked(getDocumentsApi).mockResolvedValue([
       {
         id: 'doc-1',
         title: '인증',
+        domain: '계정',
+        recordingId: 'meeting-1',
+        recordingStartedAt: '2026-09-28T09:00:00Z',
         overview: 'GitHub 로그인을 사용한다.',
         latestVersion: 3,
         updatedAt: '2026-09-28T10:00:00Z'
+      },
+      {
+        id: 'doc-2',
+        title: '결제',
+        domain: '수익',
+        latestVersion: 1,
+        updatedAt: '2026-09-27T10:00:00Z'
       }
-    ])
-    vi.mocked(getProcessingApi).mockResolvedValue([])
+    ] as never)
     render(
       <MemoryRouter>
         <Documents />
       </MemoryRouter>
     )
-    expect(await screen.findByText('GitHub 로그인을 사용한다.')).toBeTruthy()
-    expect(screen.getByText('3회 기록')).toBeTruthy()
+    expect(await screen.findByText('계정')).toBeTruthy()
+    expect(screen.getByText('수익')).toBeTruthy()
     expect(screen.getByRole('link', { name: /인증/ }).getAttribute('href')).toBe('/documents/doc-1')
+    expect(screen.getByText(/왼쪽에서 문서를 선택하세요/)).toBeTruthy()
   })
 
-  it('keeps unsaved recordings visible even when no topic document exists', async () => {
+  it('shows a meaningful empty state without a previous recording list', async () => {
     vi.mocked(getDocumentsApi).mockResolvedValue([])
-    vi.mocked(getProcessingApi).mockResolvedValue([
-      { meetingId: 'm-1', title: '회의', status: 'succeeded', stage: 'syncing', saved: false }
-    ])
     render(
       <MemoryRouter>
         <Documents />
       </MemoryRouter>
     )
-    expect(await screen.findByText('첫 번째 결정을 남겨보세요')).toBeTruthy()
-    expect(screen.getByRole('link', { name: /회의 서버 저장 대기/ }).getAttribute('href')).toBe(
-      '/meetings/m-1'
-    )
+    expect(await screen.findByText('아직 기록된 문서가 없습니다')).toBeTruthy()
+    expect(screen.queryByText('녹음 이력')).toBeNull()
+    expect(screen.getByRole('link', { name: '새 녹음 시작' }).getAttribute('href')).toBe('/record')
   })
 })

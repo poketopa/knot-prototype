@@ -6,7 +6,18 @@ import styles from './index.module.css'
 
 interface TranscriptPanelProps {
   recordingId: string
+  artifactId?: string
   onClose?: () => void
+}
+
+type TranscriptState = {
+  sourceKey: string
+  transcript: PrototypeTranscript
+}
+
+type TranscriptError = {
+  sourceKey: string
+  message: string
 }
 
 const missingTranscriptMessage =
@@ -37,58 +48,73 @@ const formatDuration = (durationSec: number) => {
   return seconds === 0 ? `${minutes}분` : `${minutes}분 ${seconds}초`
 }
 
-export default function TranscriptPanel({ recordingId, onClose }: TranscriptPanelProps) {
-  const [transcript, setTranscript] = useState<PrototypeTranscript | null>(null)
-  const [error, setError] = useState<{ recordingId: string; message: string } | null>(null)
+const sourceKeyOf = (recordingId: string, artifactId?: string) =>
+  `${recordingId}\u0000${artifactId ?? ''}`
+
+const readTranscript = (recordingId: string, artifactId?: string) =>
+  artifactId ? getTranscriptApi(recordingId, artifactId) : getTranscriptApi(recordingId)
+
+export default function TranscriptPanel({
+  recordingId,
+  artifactId,
+  onClose
+}: TranscriptPanelProps) {
+  const sourceKey = sourceKeyOf(recordingId, artifactId)
+  const [transcript, setTranscript] = useState<TranscriptState | null>(null)
+  const [error, setError] = useState<TranscriptError | null>(null)
   const requestIdRef = useRef(0)
 
   const retryTranscript = useCallback(async () => {
     const requestId = requestIdRef.current + 1
     requestIdRef.current = requestId
+    setTranscript(null)
     setError(null)
 
     try {
-      const data = await getTranscriptApi(recordingId)
+      const data = await readTranscript(recordingId, artifactId)
       if (requestIdRef.current !== requestId) return
       if (!data) throw new Error(missingTranscriptMessage)
-      setTranscript(data)
+      setTranscript({ sourceKey, transcript: data })
       void trackApi({ eventType: 'transcript_viewed', recordingId }).catch(() => {})
     } catch (caught: unknown) {
       if (requestIdRef.current !== requestId) return
       setTranscript(null)
-      setError({ recordingId, message: toFriendlyMessage(caught) })
+      setError({ sourceKey, message: toFriendlyMessage(caught) })
     }
-  }, [recordingId])
+  }, [artifactId, recordingId, sourceKey])
 
   useEffect(() => {
     const requestId = requestIdRef.current + 1
     requestIdRef.current = requestId
 
-    void getTranscriptApi(recordingId)
+    void readTranscript(recordingId, artifactId)
       .then((data) => {
         if (requestIdRef.current !== requestId) return
         if (!data) {
           setTranscript(null)
-          setError({ recordingId, message: missingTranscriptMessage })
+          setError({ sourceKey, message: missingTranscriptMessage })
           return
         }
-        setTranscript(data)
+        setTranscript({ sourceKey, transcript: data })
         setError(null)
         void trackApi({ eventType: 'transcript_viewed', recordingId }).catch(() => {})
       })
       .catch((caught: unknown) => {
         if (requestIdRef.current !== requestId) return
         setTranscript(null)
-        setError({ recordingId, message: toFriendlyMessage(caught) })
+        setError({ sourceKey, message: toFriendlyMessage(caught) })
       })
 
     return () => {
       requestIdRef.current += 1
     }
-  }, [recordingId])
+  }, [artifactId, recordingId, sourceKey])
 
-  const currentTranscript = transcript?.recordingId === recordingId ? transcript : null
-  const currentError = error?.recordingId === recordingId ? error.message : null
+  const currentTranscript =
+    transcript?.sourceKey === sourceKey && transcript.transcript.recordingId === recordingId
+      ? transcript.transcript
+      : null
+  const currentError = error?.sourceKey === sourceKey ? error.message : null
   const labels = [...new Set(currentTranscript?.utterances.map((item) => item.speakerLabel) ?? [])]
   const durationSec = currentTranscript ? getDurationSec(currentTranscript) : null
 

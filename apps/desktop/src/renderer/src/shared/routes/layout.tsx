@@ -9,7 +9,7 @@ import {
   onPrototypeChanged
 } from '@renderer/shared/api/prototype'
 import type { PrototypeAuthState } from '@shared/prototype'
-import { meetingDetailPath, PATHS } from './paths'
+import { PATHS, processingPath } from './paths'
 import styles from './layout.module.css'
 
 export function MainWindowLayout() {
@@ -17,7 +17,7 @@ export function MainWindowLayout() {
   useEffect(
     () =>
       onRecordingState(({ stoppedMeetingId }) => {
-        if (stoppedMeetingId) navigate(meetingDetailPath({ meetingId: stoppedMeetingId }))
+        if (stoppedMeetingId) navigate(processingPath({ meetingId: stoppedMeetingId }))
       }),
     [navigate]
   )
@@ -27,9 +27,10 @@ export function MainWindowLayout() {
 export function AppShellLayout() {
   const { pathname } = useLocation()
   const isDocument = pathname === PATHS.home || !!matchPath(PATHS.documentDetail, pathname)
-  const isHistory =
-    pathname === PATHS.recordingHistory || !!matchPath(PATHS.meetingDetail, pathname)
-  const isSummary = pathname === PATHS.summaries || !!matchPath(PATHS.summaryDetail, pathname)
+  const isRecord =
+    pathname === PATHS.record ||
+    !!matchPath(PATHS.processing, pathname) ||
+    !!matchPath(PATHS.meetingDetail, pathname)
   const [auth, setAuth] = useState<PrototypeAuthState | null>(null)
   const [error, setError] = useState<string | null>(null)
   useEffect(() => {
@@ -77,12 +78,8 @@ export function AppShellLayout() {
           <Link to={PATHS.home} aria-current={isDocument ? 'page' : undefined}>
             문서
           </Link>
-          <NavLink to={PATHS.record}>녹음</NavLink>
-          <Link to={PATHS.summaries} aria-current={isSummary ? 'page' : undefined}>
-            정리
-          </Link>
-          <Link to={PATHS.recordingHistory} aria-current={isHistory ? 'page' : undefined}>
-            녹음 이력
+          <Link to={PATHS.record} aria-current={isRecord ? 'page' : undefined}>
+            녹음
           </Link>
           <NavLink to={PATHS.settings}>설정</NavLink>
         </nav>
