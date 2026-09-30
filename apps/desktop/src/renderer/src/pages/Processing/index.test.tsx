@@ -4,7 +4,7 @@ import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import type { PrototypeProcessingItem } from '@shared/prototype'
-import Processing from './index'
+import Processing, { ProcessingContent } from './index'
 
 const { getProcessingApi, getDocumentsApi, getDocumentApi, retryProcessingApi } = vi.hoisted(
   () => ({
@@ -42,6 +42,43 @@ function renderProcessing(item: PrototypeProcessingItem) {
 }
 
 describe('processing status', () => {
+  it('returns to the recorder when the route sees server save completed', async () => {
+    getProcessingApi.mockResolvedValue([
+      { meetingId: 'meeting-1', title: '회의', stage: 'done', status: 'succeeded', saved: true }
+    ])
+    render(
+      <MemoryRouter initialEntries={['/processing/meeting-1']}>
+        <Routes>
+          <Route path="/processing/:meetingId" element={<Processing />} />
+          <Route path="/record" element={<div>녹음 시작 화면</div>} />
+        </Routes>
+      </MemoryRouter>
+    )
+
+    expect(await screen.findByText('녹음 시작 화면')).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: '정리가 끝났어요' })).toBeNull()
+  })
+
+  it('keeps the route on the retryable screen while server save has not completed', async () => {
+    renderProcessing({
+      meetingId: 'meeting-1',
+      title: '회의',
+      status: 'running',
+      stage: 'syncing',
+      completedStages: ['recording', 'transcribing', 'summarizing'],
+      hasTranscript: true,
+      saved: false,
+      syncError: 'HTTP 503',
+      canRetry: true
+    })
+
+    expect(
+      await screen.findByRole('heading', { name: '서버에 원본을 보관하고 있어요' })
+    ).toBeTruthy()
+    expect(screen.getByRole('alert').textContent).toContain('서버 보관: HTTP 503')
+    expect(screen.getByRole('button', { name: '실패한 단계 다시 시도' })).toBeTruthy()
+  })
+
   it('does not claim an empty result while generated documents are still loading', async () => {
     let resolveDocuments!: (documents: never[]) => void
     getProcessingApi.mockResolvedValue([
@@ -49,10 +86,8 @@ describe('processing status', () => {
     ])
     getDocumentsApi.mockReturnValue(new Promise((resolve) => (resolveDocuments = resolve)))
     render(
-      <MemoryRouter initialEntries={['/processing/meeting-1']}>
-        <Routes>
-          <Route path="/processing/:meetingId" element={<Processing />} />
-        </Routes>
+      <MemoryRouter>
+        <ProcessingContent meetingId="meeting-1" />
       </MemoryRouter>
     )
     await screen.findByRole('heading', { name: '정리가 끝났어요' })
@@ -67,10 +102,8 @@ describe('processing status', () => {
     ])
     getDocumentsApi.mockRejectedValue(new Error('문서를 불러오지 못했습니다'))
     render(
-      <MemoryRouter initialEntries={['/processing/meeting-1']}>
-        <Routes>
-          <Route path="/processing/:meetingId" element={<Processing />} />
-        </Routes>
+      <MemoryRouter>
+        <ProcessingContent meetingId="meeting-1" />
       </MemoryRouter>
     )
     expect((await screen.findByRole('alert')).textContent).toContain('문서를 불러오지 못했습니다')

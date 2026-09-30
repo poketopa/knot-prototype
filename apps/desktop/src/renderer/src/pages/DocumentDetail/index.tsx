@@ -39,16 +39,11 @@ type PrototypeDocumentDetailV2 = PrototypeDocumentDetail & {
   outline?: DocumentOutlineSection[]
 }
 
-const formatDateTime = (value?: string) =>
-  value
-    ? new Date(value).toLocaleString('ko-KR', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      })
-    : '날짜 없음'
+type DocumentFlowSection = {
+  heading: string
+  paragraphs: string[]
+  items: string[]
+}
 
 const formatDate = (value?: string) =>
   value
@@ -63,11 +58,39 @@ const formatDuration = (sec?: number) => {
   if (!sec || sec < 1) return null
   const minutes = Math.floor(sec / 60)
   const seconds = sec % 60
-  return minutes > 0 ? `${minutes}분 ${seconds}초` : `${seconds}초`
+  return minutes > 0 ? (seconds > 0 ? `${minutes}분 ${seconds}초` : `${minutes}분`) : `${seconds}초`
 }
 
-const fallbackSummarySections = (document: PrototypeDocumentDetailV2): DocumentSummarySection[] => {
-  if (document.summarySections?.length) return document.summarySections
+const splitSentences = (text: string) =>
+  text
+    .split(/(?<=[.!?。！？])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean)
+
+const appendFlowText = (
+  map: Map<string, DocumentFlowSection>,
+  heading: string,
+  text: string,
+  seen: Set<string>,
+  asItem = false
+) => {
+  const normalizedHeading = heading.trim()
+  const key = normalizedHeading.replace(/\s+/g, ' ').toLowerCase()
+  const section = map.get(key) ?? { heading: normalizedHeading, paragraphs: [], items: [] }
+
+  for (const sentence of splitSentences(text)) {
+    const normalizedSentence = sentence.replace(/\s+/g, ' ').trim()
+    const sentenceKey = `${key}:${normalizedSentence}`
+    if (!normalizedSentence || seen.has(sentenceKey)) continue
+    if (asItem) section.items.push(sentence)
+    else section.paragraphs.push(sentence)
+    seen.add(sentenceKey)
+  }
+
+  if (section.paragraphs.length || section.items.length) map.set(key, section)
+}
+
+const legacyFlowSections = (document: PrototypeDocumentDetailV2): DocumentFlowSection[] => {
   const latest = document.contributions.at(-1)
   if (!latest) return []
   const texts = [
@@ -79,26 +102,30 @@ const fallbackSummarySections = (document: PrototypeDocumentDetailV2): DocumentS
     ? [
         {
           heading: formatDate(latest.startedAt),
-          text: texts.join('\n')
+          paragraphs: texts,
+          items: []
         }
       ]
     : []
 }
 
-const fallbackOutline = (document: PrototypeDocumentDetailV2): DocumentOutlineSection[] => {
-  if (document.outline?.length) return document.outline
-  return document.contributions
-    .map((entry) => {
-      const items = [
-        ...entry.section.decisions.map((item) => item.text),
-        ...entry.section.unresolved.map((item) => item.text)
-      ].filter(Boolean)
-      return {
-        heading: formatDate(entry.startedAt),
-        items: items.map((text) => ({ text }))
-      }
-    })
-    .filter((section) => section.items.length > 0)
+const documentFlowSections = (document: PrototypeDocumentDetailV2): DocumentFlowSection[] => {
+  if (!document.summarySections?.length && !document.outline?.length)
+    return legacyFlowSections(document)
+
+  const sections = new Map<string, DocumentFlowSection>()
+  const seen = new Set<string>()
+
+  for (const section of document.summarySections ?? []) {
+    appendFlowText(sections, section.heading, section.text, seen)
+  }
+  for (const section of document.outline ?? []) {
+    for (const item of section.items) {
+      appendFlowText(sections, section.heading, item.text, seen, true)
+    }
+  }
+
+  return [...sections.values()]
 }
 
 const recordingIdFor = (document: PrototypeDocumentDetailV2) =>
@@ -107,13 +134,13 @@ const recordingIdFor = (document: PrototypeDocumentDetailV2) =>
 const recordingStartedAtFor = (document: PrototypeDocumentDetailV2) =>
   document.recordingStartedAt ?? document.contributions.at(-1)?.startedAt
 
-export default function DocumentDetail() {
+export default function DocumentDetail({ embedded = false }: { embedded?: boolean }) {
   const { documentId } = useParams()
   if (!documentId) return <p>문서를 찾을 수 없습니다.</p>
-  return <DocumentContent key={documentId} documentId={documentId} />
+  return <DocumentContent key={documentId} documentId={documentId} embedded={embedded} />
 }
 
-function DocumentContent({ documentId }: { documentId: string }) {
+function DocumentContent({ documentId, embedded }: { documentId: string; embedded: boolean }) {
   const [catalog, setCatalog] = useState<DocumentTreeItem[]>([])
   const [document, setDocument] = useState<PrototypeDocumentDetailV2 | null>(null)
   const [recordingId, setRecordingId] = useState<string | null>(null)
@@ -126,13 +153,14 @@ function DocumentContent({ documentId }: { documentId: string }) {
       try {
         const [next, nextCatalog] = await Promise.all([
           getDocumentApi(documentId),
-          getDocumentsApi()
+          embedded ? Promise.resolve([]) : getDocumentsApi()
         ])
         if (!isMounted) return
         if (!next) throw new Error('문서를 찾을 수 없습니다.')
         const typed = next as PrototypeDocumentDetailV2
         setDocument(typed)
-        setCatalog(nextCatalog as Array<PrototypeDocumentListItem & DocumentTreeItem>)
+        if (!embedded)
+          setCatalog(nextCatalog as Array<PrototypeDocumentListItem & DocumentTreeItem>)
         setError(null)
         if (viewedVersion.current !== typed.version) {
           viewedVersion.current = typed.version
@@ -143,7 +171,7 @@ function DocumentContent({ documentId }: { documentId: string }) {
         if (!initialized.current) {
           initialized.current = true
           const preference = localStorage.getItem('knot-transcript-open')
-          if (preference === 'yes' || (preference === null && window.innerWidth >= 1400)) {
+          if (preference === 'yes') {
             setRecordingId(recordingIdFor(typed))
           }
         }
@@ -159,7 +187,7 @@ function DocumentContent({ documentId }: { documentId: string }) {
       isMounted = false
       unsubscribe()
     }
-  }, [documentId])
+  }, [documentId, embedded])
 
   const openTranscript = (id: string | null) => {
     setRecordingId(id)
@@ -168,15 +196,14 @@ function DocumentContent({ documentId }: { documentId: string }) {
 
   const transcriptId = document ? recordingIdFor(document) : null
   const transcriptToggleLabel = recordingId ? '원문 닫기' : '원문 보기'
-  const summarySections = document ? fallbackSummarySections(document) : []
-  const outline = document ? fallbackOutline(document) : []
+  const flowSections = document ? documentFlowSections(document) : []
   const startedAt = document ? recordingStartedAtFor(document) : undefined
   const duration = document ? formatDuration(document.durationSec) : null
   const transcriptArtifactId = document?.transcriptArtifactId
 
   return (
     <div className={`${styles.layout} ${recordingId ? styles.withTranscript : ''}`}>
-      <DocumentTree documents={catalog} activeDocumentId={documentId} />
+      {!embedded && <DocumentTree documents={catalog} activeDocumentId={documentId} />}
       {document && (
         <button
           className={styles.transcriptToggle}
@@ -219,10 +246,9 @@ function DocumentContent({ documentId }: { documentId: string }) {
           <p role="status">문서를 불러오고 있어요.</p>
         ) : (
           <>
-            <p className={styles.domain}>{document.domain ?? '분류 없음'}</p>
             <h1>{document.title}</h1>
             <p className={styles.meta}>
-              <time dateTime={startedAt}>{formatDateTime(startedAt)}</time>
+              <time dateTime={startedAt}>{formatDate(startedAt)}</time>
               {duration && <span>{duration}</span>}
             </p>
             {document.offline && (
@@ -230,36 +256,27 @@ function DocumentContent({ documentId }: { documentId: string }) {
                 서버에 연결할 수 없어 이 Mac에 보관한 버전 {document.version}을 보여드려요.
               </p>
             )}
-            <section className={styles.summary} aria-label="문서 요약">
-              {summarySections.length === 0 ? (
+            <section className={styles.flow} aria-label="문서 내용">
+              {flowSections.length === 0 ? (
                 <p className={styles.none}>아직 표시할 요약이 없습니다.</p>
               ) : (
-                summarySections.map((section, index) => (
-                  <section className={styles.summarySection} key={`${section.heading}-${index}`}>
+                flowSections.map((section, index) => (
+                  <section className={styles.flowSection} key={`${section.heading}-${index}`}>
                     <h2>{section.heading}</h2>
-                    <p>{section.text}</p>
+                    {section.paragraphs.map((paragraph, paragraphIndex) => (
+                      <p key={`${paragraph}-${paragraphIndex}`}>{paragraph}</p>
+                    ))}
+                    {section.items.length > 0 && (
+                      <ul>
+                        {section.items.map((item, itemIndex) => (
+                          <li key={`${item}-${itemIndex}`}>{item}</li>
+                        ))}
+                      </ul>
+                    )}
                   </section>
                 ))
               )}
             </section>
-            {outline.length > 0 && (
-              <section className={styles.outline} aria-label="논의 상세">
-                <h2 className={styles.outlineTitle}>논의 상세</h2>
-                {outline.map((section, sectionIndex) => (
-                  <section
-                    className={styles.outlineSection}
-                    key={`${section.heading}-${sectionIndex}`}
-                  >
-                    <h3>{section.heading}</h3>
-                    <ul>
-                      {section.items.map((item, itemIndex) => (
-                        <li key={`${item.text}-${itemIndex}`}>{item.text}</li>
-                      ))}
-                    </ul>
-                  </section>
-                ))}
-              </section>
-            )}
             {transcriptId && (
               <button
                 className={styles.inlineTranscript}

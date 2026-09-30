@@ -29,8 +29,8 @@ const document = {
   body: '# 회원 탈퇴 정책\n\n## 첫 회의\n기록',
   summarySections: [
     {
-      heading: '핵심 요약',
-      text: '댓글과 첨부파일 보관 정책을 정했다.',
+      heading: '보관 정책',
+      text: '댓글과 첨부파일 보관 정책을 정했다. 댓글과 첨부파일은 탈퇴 뒤에도 보관한다.',
       sourceUtteranceIds: ['u3']
     }
   ],
@@ -84,18 +84,24 @@ afterEach(() => {
   localStorage.clear()
 })
 describe('주제별 문서', () => {
-  it('도메인 트리와 고정 템플릿 없는 동적 요약·목차를 표시한다', async () => {
+  it('도메인 트리와 고정 템플릿 없는 통합 문서 흐름을 표시한다', async () => {
     vi.mocked(getDocumentApi).mockResolvedValue(document)
     vi.mocked(getDocumentsApi).mockResolvedValue(catalog)
     localStorage.setItem('knot-transcript-open', 'no')
     mount()
     expect(await screen.findByText('댓글과 첨부파일 보관 정책을 정했다.')).toBeTruthy()
-    expect(screen.getAllByText('계정')).toHaveLength(2)
+    expect(screen.getByText('내 노트')).toBeTruthy()
+    expect(screen.getAllByText('문서').length).toBeGreaterThan(1)
+    expect(screen.getByRole('link', { name: '회원 탈퇴 정책' }).getAttribute('aria-current')).toBe(
+      'page'
+    )
     expect(screen.getByText('5분 5초')).toBeTruthy()
     expect(screen.queryByText('2번째 기록')).toBeNull()
-    expect(screen.getByRole('heading', { name: '논의 상세' })).toBeTruthy()
-    expect(screen.getByText('보관 정책')).toBeTruthy()
-    expect(screen.getByText('댓글과 첨부파일은 탈퇴 뒤에도 보관한다.')).toBeTruthy()
+    expect(screen.getAllByRole('heading', { name: '보관 정책' })).toHaveLength(1)
+    expect(screen.getAllByText('댓글과 첨부파일은 탈퇴 뒤에도 보관한다.')).toHaveLength(1)
+    expect(screen.queryByRole('heading', { name: '논의 상세' })).toBeNull()
+    expect(screen.queryByText(/2026년 9월 21일/)).toBeTruthy()
+    expect(screen.queryByRole('link', { name: /9월 21일/ })).toBeNull()
     expect(screen.queryByText('원문 u3')).toBeNull()
     expect(screen.queryByRole('heading', { name: '확정된 결정' })).toBeNull()
     expect(screen.queryByRole('heading', { name: '미결정 사항' })).toBeNull()

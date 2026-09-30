@@ -1,26 +1,21 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from 'vitest'
-import { latestProcessingItem } from './latestProcessingItem'
+import { describe, expect, it, vi } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import { MemoryRouter } from 'react-router'
+import Record from './index'
+
+vi.mock('@renderer/modules/widgets/recording/RecorderSection', () => ({
+  default: () => <section aria-label="녹음 시작">Recorder</section>
+}))
 
 describe('Record processing selection', () => {
-  it('selects the latest started processing item for Record tab resume', () => {
-    expect(
-      latestProcessingItem([
-        {
-          meetingId: 'older',
-          title: '이전 회의',
-          status: 'succeeded',
-          stage: 'done',
-          startedAt: '2026-09-28T10:00:00Z'
-        },
-        {
-          meetingId: 'latest',
-          title: '최근 회의',
-          status: 'running',
-          stage: 'syncing',
-          startedAt: '2026-09-29T10:00:00Z'
-        }
-      ])?.meetingId
-    ).toBe('latest')
+  it('opens the recorder as the default Record tab', () => {
+    render(
+      <MemoryRouter initialEntries={['/record']}>
+        <Record />
+      </MemoryRouter>
+    )
+
+    expect(screen.getByRole('region', { name: '녹음 시작' })).toBeTruthy()
   })
 })

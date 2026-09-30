@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router'
+import { Link, useNavigate, useParams } from 'react-router'
 import type {
   PrototypeDocumentDetail,
   PrototypeDocumentListItem,
@@ -48,18 +48,25 @@ const BUSY_STAGES = new Set<PrototypeProcessingItem['stage']>([
 
 export default function Processing() {
   const { meetingId } = useParams()
+  const navigate = useNavigate()
   return meetingId ? (
-    <ProcessingContent key={meetingId} meetingId={meetingId} />
+    <ProcessingContent
+      key={meetingId}
+      meetingId={meetingId}
+      onSavedComplete={() => navigate(PATHS.record, { replace: true })}
+    />
   ) : (
     <p>녹음을 찾을 수 없습니다.</p>
   )
 }
 export function ProcessingContent({
   meetingId,
-  onNewRecording
+  onNewRecording,
+  onSavedComplete
 }: {
   meetingId: string
   onNewRecording?: () => void
+  onSavedComplete?: () => void
 }) {
   const [job, setJob] = useState<ProcessingItemV2 | null>(null)
   const [documents, setDocuments] = useState<DocumentDetailV2[]>([])
@@ -76,6 +83,10 @@ export function ProcessingContent({
         if (!isMounted) return
         const current = jobs.find((entry) => entry.meetingId === meetingId) ?? null
         setJob(current)
+        if (current?.stage === 'done' && current.saved && onSavedComplete) {
+          onSavedComplete()
+          return
+        }
         if (
           current?.stage === 'done' ||
           current?.stage === 'syncing' ||
@@ -112,7 +123,7 @@ export function ProcessingContent({
       isMounted = false
       unsubscribe()
     }
-  }, [meetingId])
+  }, [meetingId, onSavedComplete])
   const retry = async () => {
     setIsRetrying(true)
     setError(null)
@@ -130,7 +141,7 @@ export function ProcessingContent({
       onNewRecording()
       return
     }
-    window.location.hash = `${PATHS.record}?new=1`
+    window.location.hash = PATHS.record
   }
   return (
     <div className={styles.page}>

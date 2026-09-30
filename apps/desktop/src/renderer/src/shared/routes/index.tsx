@@ -1,6 +1,7 @@
 import { createHashRouter } from 'react-router'
 import Documents from '@renderer/pages/Documents'
 import DocumentDetail from '@renderer/pages/DocumentDetail'
+import DocumentWorkspace from '@renderer/pages/Documents/Workspace'
 import Processing from '@renderer/pages/Processing'
 import Record from '@renderer/pages/Record'
 import Settings from '@renderer/pages/Settings'
@@ -15,8 +16,13 @@ export const router = createHashRouter([
       {
         element: <AppShellLayout />,
         children: [
-          { path: PATHS.home, element: <Documents /> },
-          { path: PATHS.documentDetail, element: <DocumentDetail /> },
+          {
+            element: <DocumentWorkspace />,
+            children: [
+              { index: true, element: <Documents /> },
+              { path: 'documents/:documentId', element: <DocumentDetail embedded /> }
+            ]
+          },
           { path: PATHS.processing, element: <Processing /> },
           { path: PATHS.meetingDetail, element: <Processing /> },
           { path: PATHS.settings, element: <Settings /> },

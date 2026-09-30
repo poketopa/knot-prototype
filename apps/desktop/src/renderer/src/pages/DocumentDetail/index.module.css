@@ -5,15 +5,15 @@
   min-height: 0;
   overflow: hidden;
   color: var(--color-text, #262624);
-  background: var(--color-bg, #faf9f7);
+  background: #faf9f7;
 }
 
 .document {
   width: 720px;
   max-width: 100%;
   min-width: 0;
-  margin: 0 auto;
-  padding: 48px 40px 80px;
+  margin: 100px 0 80px 40px;
+  padding: 0;
   flex-shrink: 1;
   overflow-y: auto;
   overflow-wrap: anywhere;
@@ -63,9 +63,9 @@
 .document h1 {
   margin: 0 0 10px;
   color: var(--color-text, #262624);
-  font-size: 30px;
-  font-weight: 650;
-  line-height: 1.35;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.32;
   letter-spacing: 0;
 }
 
@@ -73,81 +73,63 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  margin: 0 0 32px;
+  margin: 0 0 30px;
   color: var(--color-text-muted, #8b8882);
-  font-size: 13px;
+  font-size: 14px;
   flex-wrap: wrap;
 }
 
 .meta span {
   display: inline-flex;
   align-items: center;
-  min-height: 24px;
-  padding: 0 10px;
-  border: 1px solid var(--color-border, #e9e6e1);
-  border-radius: 999px;
-  color: var(--color-text, #262624);
-  background: #fff;
-  font-size: 12px;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 5px;
+  color: #5b5852;
+  background: #f1efea;
+  font-size: 13px;
 }
 
-.summary {
+.flow {
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  padding-bottom: 28px;
-  border-bottom: 1px solid var(--color-divider, #efeeeb);
+  gap: 24px;
 }
 
-.summarySection h2 {
+.flowSection h2 {
   margin: 0 0 10px;
-  font-size: 18px;
+  color: #262624;
+  font-size: 16px;
   font-weight: 650;
+  line-height: 1.45;
 }
 
-.summarySection p {
+.flowSection p {
   margin: 0;
-  color: var(--color-text, #262624);
-  font-size: 16px;
-  line-height: 1.8;
+  color: #5b5852;
+  font-size: 14px;
+  line-height: 24px;
   white-space: pre-line;
 }
 
-.outline {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 28px;
+.flowSection p + p {
+  margin-top: 6px;
 }
 
-.outlineTitle {
-  margin: 0 0 8px;
-  font-size: 18px;
-  font-weight: 650;
-}
-
-.outlineSection {
-  padding: 16px 0;
-  border-bottom: 1px solid var(--color-divider, #efeeeb);
-}
-
-.outlineSection h3 {
+.flowSection ul {
   margin: 0;
-  font-size: 16px;
-  font-weight: 650;
+  padding-left: 18px;
+  color: #5b5852;
+  font-size: 14px;
+  line-height: 24px;
 }
 
-.outline ul {
-  margin: 14px 0 0;
-  padding-left: 20px;
-  color: var(--color-text, #262624);
-  font-size: var(--font-md, 16px);
-  line-height: 1.75;
+.flowSection p + ul {
+  margin-top: 6px;
 }
 
-.outline li {
-  margin: 7px 0;
-  padding-left: 2px;
+.flowSection li + li {
+  margin-top: 6px;
 }
 
 .none {
@@ -201,6 +183,7 @@
   }
   .document {
     width: 100%;
-    padding: 28px 24px 56px;
+    margin: 24px 0 56px;
+    padding: 0 24px;
   }
 }
