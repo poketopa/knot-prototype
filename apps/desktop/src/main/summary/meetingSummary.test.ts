@@ -44,11 +44,11 @@ describe('meeting-wide summary', () => {
     createLlmClient.mockResolvedValue({
       provider: 'local',
       model: 'test',
-      chunkBudgetChars: 900,
+      chunkBudgetChars: 1600,
       complete: vi.fn(async ({ prompt }: { prompt: string }) => {
         calls.push(prompt)
         const labels = [...new Set(prompt.match(/주제\d+/g) ?? [])].join(',')
-        return `핵심: ${labels}\n정리: ${labels} 내용을 검토했습니다.`
+        return `## 핵심 요약\n${labels}의 구현 범위를 논의했습니다.\n\n## 구현 범위\n${labels} 내용을 검토했습니다.`
       })
     })
     const { createMeetingSummary } = await import('./meetingSummary')
@@ -96,7 +96,7 @@ describe('meeting-wide summary', () => {
     const complete = vi
       .fn()
       .mockResolvedValue(
-        '핵심: 출시 준비의 걸림돌을 확인했습니다.\n정리: 첫 논의에서는 접근 권한을 확인했습니다.\n\n이후 테스트 절차와 일정 사이의 관계를 검토했습니다.'
+        '## 핵심 요약\n출시 준비의 걸림돌을 확인했습니다.\n\n확인할 범위를 합의했습니다.\n\n## 접근 권한\n첫 논의에서는 접근 권한을 확인했습니다.\n\n## 테스트 절차\n이후 테스트 절차와 일정 사이의 관계를 검토했습니다.'
       )
     createLlmClient.mockResolvedValue({
       provider: 'local',
@@ -116,11 +116,37 @@ describe('meeting-wide summary', () => {
     expect(complete).toHaveBeenCalledWith(
       expect.objectContaining({
         prompt: expect.stringContaining('접근 권한부터 확인합시다.'),
-        maxTokens: 1200
+        maxTokens: 3000
       })
     )
     expect(complete.mock.calls[0][0].prompt).not.toContain('분석 제목')
     expect(result.content.body).toContain('\n\n')
+    expect(result.content.body).toContain('## 테스트 절차')
     expect(result.rawResponses).toHaveLength(1)
+  })
+
+  it('회의 핵심과 동적인 소제목을 분리하고 회의 이후 사실을 지어내지 말라고 지시한다', async () => {
+    const complete = vi
+      .fn()
+      .mockResolvedValue(
+        '## 핵심 요약\n업로드 완료까지 구현하기로 했습니다.\n\n## 녹음 파일 처리\n초기에는 종료 후 업로드를 검토했습니다.\n\n## 이번 완료 범위\nS3 업로드를 확인합니다.'
+      )
+    createLlmClient.mockResolvedValue({
+      provider: 'codex-cli',
+      model: 'test',
+      chunkBudgetChars: 6000,
+      complete
+    })
+    const { createMeetingSummary } = await import('./meetingSummary')
+    const result = await createMeetingSummary({
+      recordingId: 'scope',
+      analysis: { schemaVersion: 1, topics: [topic('회의 밖의 분석')] },
+      utterances: [{ speakerLabel: '참여자 1', startSec: 30, text: '업로드까지 하기로 하자.' }]
+    })
+    expect(result.content.headline).toBe('업로드 완료까지 구현하기로 했습니다.')
+    expect(result.content.body).toContain('## 녹음 파일 처리')
+    expect(result.content.body).toContain('## 이번 완료 범위')
+    expect(complete.mock.calls[0][0].system).toContain('회의 이후의 구현 현황')
+    expect(complete.mock.calls[0][0].prompt).not.toContain('회의 밖의 분석')
   })
 })

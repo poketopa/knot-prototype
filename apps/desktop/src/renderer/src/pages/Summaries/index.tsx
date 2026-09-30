@@ -22,6 +22,58 @@ const statusText = (summary: PrototypeMeetingSummary) => {
   return '정리 완료'
 }
 
+const inlineEmphasis = (text: string) =>
+  text
+    .split(/(\*\*[^*]+\*\*)/g)
+    .map((part, index) =>
+      part.startsWith('**') && part.endsWith('**') ? (
+        <strong key={index}>{part.slice(2, -2)}</strong>
+      ) : (
+        part
+      )
+    )
+
+const summaryParagraphs = (text: string) =>
+  text
+    .split(/\n\s*\n/)
+    .map((block) => block.trim())
+    .filter(Boolean)
+    .map((block, index) => {
+      const lines = block.split('\n').map((line) => line.trim())
+      if (lines.every((line) => /^[-*]\s+/.test(line))) {
+        return (
+          <ul key={index}>
+            {lines.map((line, lineIndex) => (
+              <li key={lineIndex}>{inlineEmphasis(line.replace(/^[-*]\s+/, ''))}</li>
+            ))}
+          </ul>
+        )
+      }
+      return <p key={index}>{inlineEmphasis(block)}</p>
+    })
+
+const SummaryBody = ({ body }: { body: string }) => {
+  const headings = [...body.matchAll(/^#{2,3}\s+(.+?)\s*$/gm)]
+  if (!headings.length) return <div className={styles.body}>{summaryParagraphs(body)}</div>
+
+  return (
+    <div className={styles.body}>
+      {summaryParagraphs(body.slice(0, headings[0].index))}
+      {headings.map((heading, index) => (
+        <section className={styles.topic} key={index}>
+          <h3>{heading[1].trim()}</h3>
+          {summaryParagraphs(
+            body.slice(
+              (heading.index ?? 0) + heading[0].length,
+              headings[index + 1]?.index ?? body.length
+            )
+          )}
+        </section>
+      ))}
+    </div>
+  )
+}
+
 export default function Summaries() {
   const { recordingId } = useParams<{ recordingId: string }>()
   const [items, setItems] = useState<PrototypeMeetingSummary[]>([])
@@ -81,10 +133,10 @@ export default function Summaries() {
               <>
                 <div className={styles.highlight}>
                   <h2>핵심 요약</h2>
-                  <p>{selected.headline}</p>
+                  {summaryParagraphs(selected.headline ?? '')}
                 </div>
                 <h2>회의 전체 정리</h2>
-                <p className={styles.body}>{selected.body}</p>
+                <SummaryBody body={selected.body ?? ''} />
                 {selected.hasTranscript && (
                   <div className={styles.refresh}>
                     <button

@@ -91,7 +91,7 @@ export const persistMeetingSummary = async ({
       content: { schemaVersion: 1, label: response.label, text: response.text },
       provider,
       model: model ?? undefined,
-      promptVersion: 'meeting-summary-v2'
+      promptVersion: 'meeting-summary-v3'
     })
   }
   const id = await registerPrototypeArtifact({
@@ -100,7 +100,7 @@ export const persistMeetingSummary = async ({
     content,
     provider,
     model: model ?? undefined,
-    promptVersion: rawResponses.length ? 'meeting-summary-v2' : 'meeting-summary-v1-backfill'
+    promptVersion: rawResponses.length ? 'meeting-summary-v3' : 'meeting-summary-v1-backfill'
   })
   updateMeetingSummary({
     meetingId: recordingId,

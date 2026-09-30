@@ -66,6 +66,22 @@ describe('meeting summaries page', () => {
     expect(await screen.findByText('정리할 내용이 없습니다.')).toBeTruthy()
   })
 
+  it('새 정리본의 핵심 문단과 논의별 소제목·목록을 읽기 좋게 표시한다', async () => {
+    getSummariesApi.mockResolvedValue([
+      {
+        ...ready,
+        headline: '업로드까지 구현합니다.\n\n품질 개선은 별도로 실험합니다.',
+        body: '## 녹음 파일 처리\n녹음 종료 후 업로드를 먼저 구현합니다.\n\n## AI 서버 책임\n- WAV 입력을 검토합니다.\n- **전처리 위치**는 조사합니다.'
+      }
+    ])
+    showAt('/summaries/meeting-1')
+    expect(await screen.findByRole('heading', { name: '녹음 파일 처리' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'AI 서버 책임' })).toBeTruthy()
+    expect(screen.getAllByRole('listitem')).toHaveLength(2)
+    expect(screen.getByText('전처리 위치', { selector: 'strong' })).toBeTruthy()
+    expect(screen.getByText('품질 개선은 별도로 실험합니다.')).toBeTruthy()
+  })
+
   it('전사에서 다시 정리하되 기존 결과를 유지하고 중복 클릭을 막는다', async () => {
     getSummariesApi.mockResolvedValue([{ ...ready, refreshStatus: 'running' }])
     showAt('/summaries/meeting-1')

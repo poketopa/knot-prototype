@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { TopicAnalysisResult } from '@shared/types'
-import { SUMMARY_MAX_PREDICT_TOKENS } from '@shared/summary'
 import { createLlmClient } from '../llm/provider'
 import { prototypeUserRoot } from '../prototype/authState'
 
@@ -13,22 +12,41 @@ export interface MeetingSummaryContent {
 }
 
 const SYSTEM = [
-  '당신은 한 회의 전체를 읽기 쉬운 한국어 글로 정리합니다.',
-  '입력에 나온 사실만 사용하고 날짜, 담당자, 결정 또는 결론을 지어내지 않습니다.',
-  '핵심적인 논의와 그 배경, 의견이 바뀐 이유, 남은 맥락을 중요도에 따라 담습니다.',
-  '중요한 내용을 빠뜨리지 않되 같은 말을 반복하지 않습니다. 분량과 문단 수는 내용에 맞게 정합니다.',
-  '주제별 문서, 결정/미결정 목록, 불릿 목록을 만들지 않습니다.',
-  '첫 줄은 "핵심: "으로 시작하는 한 문장입니다. 이어서 "정리: "로 시작하는 자연스러운 글을 씁니다.'
+  '당신은 전사를 읽지 않은 사람도 회의의 논의와 결론을 이해할 수 있게 한국어로 정리합니다.',
+  '회의 발언과 구간 메모에 있는 내용만 사용합니다. 회의 이후의 구현 현황이나 외부 지식을 덧붙이지 않습니다.',
+  '제안·추측·검토 중인 안과 실제로 합의한 범위를 구별하고, 마지막에 범위가 좁혀졌다면 최종 합의를 우선합니다.',
+  '핵심 요약에는 회의의 우선순위와 이번에 합의한 범위를 먼저 적습니다. 중요한 주장은 배경과 이유까지 설명합니다.',
+  '이어서 주요 논의마다 구체적인 소제목을 붙이고 논의한 문제, 대안, 판단 이유, 현재 상태를 읽기 쉬운 문단으로 씁니다.',
+  '섹션과 문단 수를 고정하지 않습니다. 논의가 많으면 자세히 쓰고, 짧은 회의는 그만큼 간결하게 씁니다. 겹치는 주제와 같은 결론은 합치고 잡담·일반론은 생략합니다.',
+  '결정·미결정 목록을 별도로 만들지 말고 필요한 결론은 해당 논의 속에서 설명합니다.',
+  '화자 번호는 신원이 아닙니다. 누가 맡기로 했는지가 명확할 때만 참여자 번호를 사용합니다.',
+  '아래 형식으로만 출력합니다. ## 핵심 요약 다음에 요약 문단을 쓰고, 이후 ## 로 시작하는 소제목과 본문을 하나 이상 씁니다.'
 ].join('\n')
 const NOTES_SYSTEM = [
-  '당신은 회의 전사 구간의 내용을 다음 단계에 전달할 메모로 압축합니다.',
-  '논의의 순서와 이유, 중요한 사실 및 반론을 보존합니다. 입력에 없는 내용을 만들지 않습니다.',
+  '당신은 회의 전사 구간을 나중에 전체 회의 문서로 합칠 수 있게 메모합니다.',
+  '주제마다 문제, 제안한 대안, 이유와 반론, 실제 합의 또는 보류, 맡기로 한 일을 보존합니다.',
+  '발언 속 추측과 확인된 사실을 구별하고, 입력에 없는 회의 이후 상황을 만들지 않습니다.',
   '짧다는 이유로 핵심을 생략하지 않되 반복과 잡담은 제외합니다.'
 ].join('\n')
-const INSTRUCTION = '다음 회의 내용을 전체 회의의 핵심 요약과 읽기 쉬운 글로 정리하세요.\n\n'
+const INSTRUCTION = [
+  '다음 회의 내용으로 한 회의의 정리본을 작성하세요. 분량은 실제 논의의 양에 맞춥니다.',
+  '각 주요 논의가 왜 나왔고 무엇을 검토해 어디까지 정했는지 설명하세요. 입력에 근거가 없는 설명으로 분량을 늘리지 마세요.',
+  '전사에서 말하지 않은 회의 이후의 변경이나 현재 제품 상태는 넣지 마세요.',
+  '',
+  '## 핵심 요약',
+  '회의의 핵심과 실제 합의 범위를 필요한 만큼의 문장으로 설명합니다.',
+  '',
+  '## 논의 내용을 나타내는 소제목',
+  '해당 논의의 배경, 대안, 이유와 결론을 문단으로 설명합니다. 실제 주제에 맞춰 소제목을 바꿉니다.',
+  '',
+  '회의 내용:',
+  ''
+].join('\n')
 const NOTES_INSTRUCTION = '다음 회의 구간에서 후속 정리에 필요한 내용을 빠짐없이 메모하세요.\n\n'
 const REDUCE_INSTRUCTION =
-  '다음은 같은 회의의 앞뒤 구간 메모입니다. 논의 흐름과 중요한 근거를 보존하며 합치세요.\n\n'
+  '다음은 같은 회의의 앞뒤 구간 메모입니다. 주제별 문제·대안·근거·최종 합의와 보류를 보존하며 합치세요. 짧게 만들기 위해 논의를 삭제하지 마세요.\n\n'
+const MEETING_FINAL_MAX_TOKENS = 3000
+const MEETING_NOTES_MAX_TOKENS = 1300
 
 /** 과거 분석에도 같은 표시 형식을 적용한다. 빈 분석에는 내용을 만들어 넣지 않는다. */
 export const fallbackMeetingSummary = (analysis: {
@@ -48,15 +66,27 @@ export const parseMeetingSummary = (raw: string): MeetingSummaryContent => {
     .replace(/^```(?:text|markdown)?\s*\n|\n```$/g, '')
     .trim()
   if (!text) throw new Error('회의 전체 정리가 비어 있습니다')
-  const headlineMatch = text.match(/^핵심\s*:\s*(.+)$/m)
-  const bodyMatch = text.match(/^정리\s*:\s*([\s\S]+)$/m)
-  if (!headlineMatch || !bodyMatch || !headlineMatch[1].trim() || !bodyMatch[1].trim()) {
+  const headings = [...text.matchAll(/^#{2,3}\s+(.+?)\s*$/gm)]
+  const first = headings[0]
+  const second = headings[1]
+  if (
+    !first ||
+    !second ||
+    first.index !== 0 ||
+    first[1].trim() !== '핵심 요약' ||
+    second[1].trim() === '핵심 요약'
+  ) {
+    throw new Error('회의 전체 정리 형식이 올바르지 않습니다. 다시 시도해 주세요')
+  }
+  const headline = text.slice(first[0].length, second.index).trim()
+  const body = text.slice(second.index).trim()
+  if (!headline || !body.replace(/^#{2,3}\s+.+$/gm, '').trim()) {
     throw new Error('회의 전체 정리 형식이 올바르지 않습니다. 다시 시도해 주세요')
   }
   return {
     schemaVersion: 1,
-    headline: headlineMatch[1].trim(),
-    body: bodyMatch[1].trim()
+    headline,
+    body
   }
 }
 
@@ -100,7 +130,7 @@ const batchesOf = (lines: string[], budget: number) => {
   return batches
 }
 
-/** 전사를 우선 읽고, 긴 회의는 구간 메모를 거쳐 한 편의 글로 합친다. */
+/** 전사를 우선 읽고, 긴 회의는 구간 메모를 거쳐 주제별 설명으로 합친다. */
 export const createMeetingSummary = async ({
   recordingId,
   analysis,
@@ -147,7 +177,7 @@ export const createMeetingSummary = async ({
           `meeting-notes-0-${index}`,
           NOTES_SYSTEM,
           `${NOTES_INSTRUCTION}${group}`,
-          900
+          MEETING_NOTES_MAX_TOKENS
         )
       )
     }
@@ -166,7 +196,7 @@ export const createMeetingSummary = async ({
           `meeting-notes-${pass}-${index}`,
           NOTES_SYSTEM,
           `${REDUCE_INSTRUCTION}${group}`,
-          900
+          MEETING_NOTES_MAX_TOKENS
         )
       )
     }
@@ -177,7 +207,7 @@ export const createMeetingSummary = async ({
     'meeting-final',
     SYSTEM,
     `${INSTRUCTION}${inputs.join('\n\n')}`,
-    SUMMARY_MAX_PREDICT_TOKENS
+    MEETING_FINAL_MAX_TOKENS
   )
   return {
     content: parseMeetingSummary(final),
