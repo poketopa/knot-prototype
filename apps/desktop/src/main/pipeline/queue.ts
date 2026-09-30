@@ -72,14 +72,29 @@ const reportSummary = ({ percent, ...rest }: ReportSummaryParams) =>
 export const checkpointAiPublish = ({
   recordingId,
   analysisArtifactId,
+  transcriptArtifactId,
   enqueue = enqueueOutbox
 }: {
   recordingId: string
   analysisArtifactId: string
+  transcriptArtifactId?: string
   enqueue?: typeof enqueueOutbox
 }) => {
   const owner = requirePrototypeUser()
   const db = getDb()
+  const sourceTranscriptId =
+    transcriptArtifactId ??
+    (
+      db
+        .prepare(
+          `SELECT t.id
+    FROM prototype_artifacts t JOIN prototype_artifacts a ON a.owner_id=t.owner_id AND a.recording_id=t.recording_id
+    WHERE a.owner_id=@ownerId AND a.id=@analysisArtifactId AND t.kind='transcript'
+      AND t.created_at<=a.created_at AND t.rowid<a.rowid
+    ORDER BY t.created_at DESC,t.rowid DESC LIMIT 1`
+        )
+        .get({ ownerId: owner.id, analysisArtifactId }) as { id: string } | undefined
+    )?.id
 
   db.transaction(() => {
     upsertPrototypeJob({
@@ -118,11 +133,32 @@ export const checkpointAiPublish = ({
          LIMIT 1`
       )
       .get({ ownerId: owner.id, recordingId, analysisArtifactId })
-    if (existingOutbox) return
+    if (existingOutbox) {
+      if (sourceTranscriptId) {
+        db.prepare(
+          `UPDATE prototype_outbox
+          SET payload_json=json_set(payload_json,'$.transcriptArtifactId',@transcriptId)
+          WHERE owner_id=@ownerId AND kind='publish' AND status!='succeeded'
+            AND json_extract(payload_json,'$.recordingId')=@recordingId
+            AND json_extract(payload_json,'$.analysisArtifactId')=@analysisArtifactId
+            AND json_extract(payload_json,'$.transcriptArtifactId') IS NULL`
+        ).run({
+          ownerId: owner.id,
+          recordingId,
+          analysisArtifactId,
+          transcriptId: sourceTranscriptId
+        })
+      }
+      return
+    }
 
     enqueue({
       kind: 'publish',
-      payload: { recordingId, analysisArtifactId },
+      payload: {
+        recordingId,
+        analysisArtifactId,
+        ...(sourceTranscriptId ? { transcriptArtifactId: sourceTranscriptId } : {})
+      },
       ownerId: owner.id
     })
   })()
@@ -206,36 +242,15 @@ const summarizeMeeting = async (meetingId: string) => {
   })
   const existingAnalysis = findPrototypeArtifact({ recordingId: meetingId, kind: 'ai_analysis' })
   if (existingAnalysis) {
-    if (!findPrototypeArtifact({ recordingId: meetingId, kind: 'meeting_summary' })) {
-      const stored: unknown = JSON.parse(existingAnalysis.content_json ?? 'null')
-      if (
-        !stored ||
-        typeof stored !== 'object' ||
-        !('schemaVersion' in stored) ||
-        stored.schemaVersion !== 1 ||
-        !('topics' in stored) ||
-        !Array.isArray(stored.topics)
-      ) {
-        throw new Error('저장된 AI 분석을 읽을 수 없습니다')
-      }
-      const meetingSummary = await createMeetingSummary({
-        recordingId: meetingId,
-        analysis: stored as import('@shared/types').TopicAnalysisResult,
-        utterances: listUtterances({ meetingId })
-      })
-      await persistMeetingSummary({
-        recordingId: meetingId,
-        content: meetingSummary.content,
-        provider: meetingSummary.provider,
-        model: meetingSummary.model,
-        rawResponses: meetingSummary.rawResponses
-      })
-    }
     checkpointAiPublish({ recordingId: meetingId, analysisArtifactId: existingAnalysis.id })
     return
   }
 
   const utterances = listUtterances({ meetingId })
+  const transcriptArtifactId = findPrototypeArtifact({
+    recordingId: meetingId,
+    kind: 'transcript'
+  })?.id
 
   const documents = await listPrototypeDocuments()
   const attempt = await runTopicAnalysis({
@@ -246,32 +261,18 @@ const summarizeMeeting = async (meetingId: string) => {
       text: utterance.text,
       startSec: utterance.startSec
     })),
-    documents: documents.map((document) => ({
-      id: document.id,
-      title: document.title,
-      overview: document.overview
-    })),
+    documents: [...new Set(documents.map((document) => document.domain).filter(Boolean))].map(
+      (domain) => ({ id: domain as string, title: domain as string, domain: domain as string })
+    ),
     onProgress: ({ stage, percent }) => reportSummary({ meetingId, stage, percent })
   })
   const analysisArtifactId = await preserveTopicAnalysisArtifacts({
     recordingId: meetingId,
     attempt
   })
-  const meetingSummary = await createMeetingSummary({
-    recordingId: meetingId,
-    analysis: attempt.result,
-    utterances
-  })
-  await persistMeetingSummary({
-    recordingId: meetingId,
-    content: meetingSummary.content,
-    provider: meetingSummary.provider,
-    model: meetingSummary.model,
-    rawResponses: meetingSummary.rawResponses
-  })
-  checkpointAiPublish({ recordingId: meetingId, analysisArtifactId })
+  checkpointAiPublish({ recordingId: meetingId, analysisArtifactId, transcriptArtifactId })
   const summary =
-    meetingSummary.content.body || meetingSummary.content.headline || '정리할 내용 없음'
+    attempt.result.topics.map((topic) => topic.title).join(' · ') || '정리할 내용 없음'
   reportSummary({ meetingId, stage: 'done', percent: DONE_PERCENT, summary })
   trackPrototypeEvent({
     eventType: 'processing_stage_succeeded',

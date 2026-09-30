@@ -43,7 +43,6 @@ import {
 } from './prototype/artifacts'
 import { prototypeUserDataPath } from './prototype/config'
 import { trackPrototypeEvent } from './prototype/events'
-import { backfillMeetingSummaries } from './prototype/meetingSummaries'
 import { checkForUpdates } from './updater'
 import { createMainWindow, markMainWindowQuitting, showMainWindow } from './windows/main'
 import { registerGlobalShortcuts, unregisterGlobalShortcuts } from './windows/shortcuts'
@@ -111,7 +110,6 @@ const resumePrototypeUserWork = async () => {
   setupPrototypeShell()
   recoverMissingArtifactOutbox()
   await recoverTopicAttemptSpoolArtifacts()
-  await backfillMeetingSummaries()
   recoverQueuedPrototypeJobs()
   void drainPrototypeOutbox()
   void flushPrototypeRevocations()

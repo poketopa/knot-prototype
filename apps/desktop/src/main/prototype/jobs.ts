@@ -196,6 +196,7 @@ export const listPrototypeProcessing = () => {
     return {
       meetingId: meeting.id,
       title: meeting.title,
+      startedAt: new Date(meeting.createdAt).toISOString(),
       status,
       stage:
         active?.stage ??

@@ -371,6 +371,7 @@ export type GetPrototypeDocumentResponse = PrototypeDocumentDetail | null
 
 export interface ReadPrototypeTranscriptRequest {
   recordingId: string
+  artifactId?: string
 }
 export type ReadPrototypeTranscriptResponse = PrototypeTranscript | null
 

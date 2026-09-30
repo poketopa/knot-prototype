@@ -108,6 +108,7 @@ export interface TopicAnalysisUtterance {
 
 export interface TopicAnalysisDocument {
   id: string
+  domain?: string
   title: string
   overview?: string
 }
@@ -126,10 +127,47 @@ export interface TopicAnalysisTopic {
   unresolved: TopicAnalysisPoint[]
 }
 
-export interface TopicAnalysisResult {
+export interface TopicAnalysisResultV1 {
   schemaVersion: 1
   topics: TopicAnalysisTopic[]
 }
+
+export interface TopicAnalysisSourceSection {
+  heading: string
+  text: string
+  sourceUtteranceIds: string[]
+}
+
+export interface TopicAnalysisOutlineItem {
+  text: string
+  sourceUtteranceIds: string[]
+}
+
+export interface TopicAnalysisOutlineSection {
+  heading: string
+  items: TopicAnalysisOutlineItem[]
+}
+
+export interface TopicAnalysisGeneratedTopic {
+  documentId: string
+  domain: string
+  title: string
+  summarySections: TopicAnalysisSourceSection[]
+  outline: TopicAnalysisOutlineSection[]
+  /** Legacy reader compatibility only. New V2 JSON emitted by runTopicAnalysis does not include this field. */
+  overview: string
+  /** Legacy reader compatibility only. New V2 JSON emitted by runTopicAnalysis does not include this field. */
+  decisions: TopicAnalysisPoint[]
+  /** Legacy reader compatibility only. New V2 JSON emitted by runTopicAnalysis does not include this field. */
+  unresolved: TopicAnalysisPoint[]
+}
+
+export interface TopicAnalysisResultV2 {
+  schemaVersion: 2
+  topics: TopicAnalysisGeneratedTopic[]
+}
+
+export type TopicAnalysisResult = TopicAnalysisResultV1 | TopicAnalysisResultV2
 
 export interface TopicAnalysisAttempt {
   id: string

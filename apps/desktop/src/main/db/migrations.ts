@@ -130,6 +130,24 @@ const MIGRATIONS = [
   );
   CREATE INDEX IF NOT EXISTS idx_prototype_jobs_owner_status
     ON prototype_jobs(owner_id, status, next_retry_at, created_at);
+  `,
+  // 4: 회의별 문서 캐시. 누적 문서의 기존 캐시는 전환 근거로 그대로 보존한다.
+  `
+  CREATE TABLE IF NOT EXISTS prototype_document_tree (
+    id TEXT NOT NULL,
+    owner_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    domain TEXT NOT NULL,
+    recording_id TEXT NOT NULL,
+    recording_started_at TEXT NOT NULL,
+    latest_version INTEGER NOT NULL,
+    overview TEXT,
+    detail_json TEXT,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY(owner_id, id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_document_tree_recording
+    ON prototype_document_tree(owner_id, recording_id);
   `
 ]
 

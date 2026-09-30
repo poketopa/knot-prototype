@@ -18,6 +18,20 @@ export interface PrototypeDocumentListItem {
   latestVersion: number
   updatedAt: string
   overview?: string
+  domain?: string
+  recordingId?: string
+  recordingStartedAt?: string
+}
+
+export interface PrototypeSummarySection {
+  heading: string
+  text: string
+  sourceUtteranceIds: string[]
+}
+
+export interface PrototypeOutlineSection {
+  heading: string
+  items: PrototypeDecisionItem[]
 }
 
 export interface PrototypeDecisionItem {
@@ -44,6 +58,12 @@ export interface PrototypeDocumentDetail {
   body: string
   contributions: PrototypeDocumentContribution[]
   offline?: boolean
+  domain?: string
+  recordingId?: string
+  recordingStartedAt?: string
+  transcriptArtifactId?: string
+  summarySections?: PrototypeSummarySection[]
+  outline?: PrototypeOutlineSection[]
 }
 
 export interface PrototypeTranscript {
@@ -74,6 +94,7 @@ export type PrototypeProcessingStage =
 export interface PrototypeProcessingItem {
   meetingId: string
   title: string
+  startedAt?: string
   status: 'pending' | 'running' | 'succeeded' | 'failed'
   stage: PrototypeProcessingStage
   error?: string

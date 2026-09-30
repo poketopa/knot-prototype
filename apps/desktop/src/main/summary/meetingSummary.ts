@@ -50,9 +50,16 @@ const MEETING_NOTES_MAX_TOKENS = 1300
 
 /** 과거 분석에도 같은 표시 형식을 적용한다. 빈 분석에는 내용을 만들어 넣지 않는다. */
 export const fallbackMeetingSummary = (analysis: {
-  topics: ReadonlyArray<{ overview: string }>
+  topics: ReadonlyArray<{ overview?: string; summarySections?: ReadonlyArray<{ text: string }> }>
 }): MeetingSummaryContent => {
-  const overviews = analysis.topics.map((topic) => topic.overview.trim()).filter(Boolean)
+  const overviews = analysis.topics
+    .map(
+      (topic) =>
+        topic.overview?.trim() ??
+        topic.summarySections?.map((section) => section.text).join(' ') ??
+        ''
+    )
+    .filter(Boolean)
   return {
     schemaVersion: 1,
     headline: overviews[0] ?? '',
@@ -100,6 +107,15 @@ const sourceLines = (analysis: TopicAnalysisResult, utterances: SummaryUtterance
         `[${Math.floor(utterance.startSec / 60)}분] ${utterance.speakerLabel}: ${utterance.text.trim()}`
     )
   if (transcript.length) return transcript
+  if (analysis.schemaVersion === 2) {
+    return analysis.topics.flatMap((topic) => [
+      topic.title,
+      ...topic.summarySections.map((section) => `${section.heading}: ${section.text}`),
+      ...topic.outline.flatMap((section) =>
+        section.items.map((item) => `${section.heading}: ${item.text}`)
+      )
+    ])
+  }
   return analysis.topics.flatMap((topic) => [
     `${topic.title}: ${topic.overview}`,
     ...topic.decisions.map((point) => `논의 내용: ${point.text}`),

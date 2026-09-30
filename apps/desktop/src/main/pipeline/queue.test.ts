@@ -141,6 +141,34 @@ describe('pipeline queue checkpoints', () => {
     })
   })
 
+  it('재시작한 분석의 원문을 고정하고 기존 대기 발행도 중복 없이 보완한다', async () => {
+    const { getDb } = await import('../db/connection')
+    const { checkpointAiPublish } = await import('./queue')
+    const db = getDb()
+    const insert = db.prepare(`INSERT INTO prototype_artifacts
+      (id,owner_id,recording_id,kind,content_json,sha256,byte_length,sync_status,created_at)
+      VALUES (?,'owner-1','meeting-source',?,'{}',?,2,'pending',?)`)
+    insert.run('source-before', 'transcript', 's1', 1)
+    insert.run('source-analysis', 'ai_analysis', 'a1', 2)
+    insert.run('source-after', 'transcript', 's2', 3)
+    db.prepare(
+      `INSERT INTO prototype_outbox (id,owner_id,kind,payload_json,status,created_at)
+      VALUES ('old-publish','owner-1','publish',?,'failed',4)`
+    ).run(
+      JSON.stringify({
+        recordingId: 'meeting-source',
+        analysisArtifactId: 'source-analysis'
+      })
+    )
+    checkpointAiPublish({ recordingId: 'meeting-source', analysisArtifactId: 'source-analysis' })
+    checkpointAiPublish({ recordingId: 'meeting-source', analysisArtifactId: 'source-analysis' })
+    const rows = db
+      .prepare("SELECT payload_json FROM prototype_outbox WHERE kind='publish'")
+      .all() as Array<{ payload_json: string }>
+    expect(rows).toHaveLength(1)
+    expect(JSON.parse(rows[0].payload_json).transcriptArtifactId).toBe('source-before')
+  })
+
   it('does not reset an already succeeded publish job on retry', async () => {
     const { getDb } = await import('../db/connection')
     const { checkpointAiPublish } = await import('./queue')

@@ -679,10 +679,12 @@ const parseRemoteUtterances = ({
 
 const readRemotePrototypeTranscript = async ({
   recordingId,
-  ownerId
+  ownerId,
+  artifactId
 }: {
   recordingId: string
   ownerId: string
+  artifactId?: string
 }): Promise<PrototypeTranscript | null> => {
   const recording = parseRemoteRecording({
     value: await prototypeRequest<unknown>({ path: `/recordings/${recordingId}` }),
@@ -691,7 +693,12 @@ const readRemotePrototypeTranscript = async ({
   assertSamePrototypeOwner({ ownerId })
 
   const transcriptArtifact = recording.artifacts
-    .filter((artifact) => artifact.kind === 'transcript' && artifact.completed === true)
+    .filter(
+      (artifact) =>
+        artifact.kind === 'transcript' &&
+        artifact.completed === true &&
+        (!artifactId || artifact.id === artifactId)
+    )
     .at(-1)
   if (!transcriptArtifact) return null
 
@@ -712,13 +719,33 @@ const readRemotePrototypeTranscript = async ({
 }
 
 export const readPrototypeTranscript = async ({
-  recordingId
+  recordingId,
+  artifactId
 }: {
   recordingId: string
+  artifactId?: string
 }): Promise<PrototypeTranscript | null> => {
   const owner = requirePrototypeUser()
   const meeting = findMeeting({ meetingId: recordingId })
-  if (!meeting) return readRemotePrototypeTranscript({ recordingId, ownerId: owner.id })
+  if (!meeting) return readRemotePrototypeTranscript({ recordingId, ownerId: owner.id, artifactId })
+
+  if (artifactId) {
+    const artifact = getDb()
+      .prepare(
+        `SELECT content_json FROM prototype_artifacts
+      WHERE owner_id=? AND recording_id=? AND id=? AND kind='transcript'`
+      )
+      .get(owner.id, recordingId, artifactId) as { content_json: string | null } | undefined
+    if (!artifact?.content_json)
+      return readRemotePrototypeTranscript({ recordingId, ownerId: owner.id, artifactId })
+    return {
+      recordingId,
+      title: meeting.title,
+      startedAt: new Date(meeting.createdAt).toISOString(),
+      durationSec: meeting.durationSec,
+      utterances: parseRemoteUtterances({ content: JSON.parse(artifact.content_json), recordingId })
+    }
+  }
 
   const response: PrototypeTranscript = {
     recordingId,

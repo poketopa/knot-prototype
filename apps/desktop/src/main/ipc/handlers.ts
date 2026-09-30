@@ -419,7 +419,22 @@ export const registerIpcHandlers = () => {
   ipcMain.handle(
     IPC.prototype.readTranscript,
     (_event, payload): Promise<ReadPrototypeTranscriptResponse> =>
-      readPrototypeTranscript({ recordingId: readRecordingId(payload) })
+      readPrototypeTranscript({
+        recordingId: readRecordingId(payload),
+        ...(payload &&
+        typeof payload === 'object' &&
+        'artifactId' in payload &&
+        payload.artifactId !== undefined
+          ? {
+              artifactId: readText({
+                payload,
+                key: 'artifactId',
+                maxLength: LABEL_MAX_LENGTH,
+                label: '전사 ID'
+              })
+            }
+          : {})
+      })
   )
 
   ipcMain.handle(IPC.prototype.getProcessing, (): GetPrototypeProcessingResponse =>

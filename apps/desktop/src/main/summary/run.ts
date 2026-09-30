@@ -237,15 +237,53 @@ interface TopicMapReduceParams {
 const sourceIdsOf = (results: TopicAnalysisResult[]) =>
   new Set(
     results.flatMap((result) =>
-      result.topics.flatMap((topic) =>
-        [...topic.decisions, ...topic.unresolved].flatMap((point) => point.sourceUtteranceIds)
-      )
+      result.topics.flatMap((topic) => {
+        if ('summarySections' in topic) {
+          return [
+            ...topic.summarySections.flatMap((section) => section.sourceUtteranceIds),
+            ...topic.outline.flatMap((section) =>
+              section.items.flatMap((item) => item.sourceUtteranceIds)
+            )
+          ]
+        }
+
+        return [...topic.decisions, ...topic.unresolved].flatMap(
+          (point) => point.sourceUtteranceIds
+        )
+      })
+    )
+  )
+
+const leafFingerprint = ({ text, sourceIds }: { text: string; sourceIds: string[] }) =>
+  `${[...new Set(sourceIds)].sort().join(',')}::${text.replace(/\s+/g, ' ').trim()}`
+
+const sourcedLeafFingerprintsOf = (results: TopicAnalysisResult[]) =>
+  new Set(
+    results.flatMap((result) =>
+      result.topics.flatMap((topic) => {
+        if ('summarySections' in topic) {
+          return [
+            ...topic.summarySections.map((section) =>
+              leafFingerprint({ text: section.text, sourceIds: section.sourceUtteranceIds })
+            ),
+            ...topic.outline.flatMap((section) =>
+              section.items.map((item) =>
+                leafFingerprint({ text: item.text, sourceIds: item.sourceUtteranceIds })
+              )
+            )
+          ]
+        }
+
+        return [...topic.decisions, ...topic.unresolved].map((point) =>
+          leafFingerprint({ text: point.text, sourceIds: point.sourceUtteranceIds })
+        )
+      })
     )
   )
 
 const topicReconciliationError = (reason: string) =>
   new Error(
-    `구간별 AI 정리는 보관했지만 전체 결정을 합치지 못했습니다 (${reason}). 다른 AI 모델로 다시 시도해 주세요`
+    `구간별 AI 정리는 보관했지만 전체 주제 문서를 합치지 못했습니다 (${reason}). 다른 AI 모델로 다시 시도해 주세요`
   )
 
 /** 각 단계의 입력까지 제한한다. 조정하지 못한 구간 결과를 최종 결정으로 공개하지 않는다. */
@@ -303,19 +341,13 @@ const reduceTopics = async ({
         })
         const preserved = sourceIdsOf([result])
         if ([...sourceIdsOf(items)].some((sourceId) => !preserved.has(sourceId))) {
-          throw new Error('합치기 결과에서 기존 결정 또는 미결정의 근거가 누락되었습니다')
+          throw new Error('합치기 결과에서 기존 주제 내용의 근거가 누락되었습니다')
         }
-        const decidedBefore = new Set(
-          items.flatMap((item) =>
-            item.topics.flatMap((topic) => topic.decisions.map((point) => point.text.trim()))
-          )
-        ).size
-        const decidedAfter = result.topics.reduce((sum, topic) => sum + topic.decisions.length, 0)
-        if (decidedAfter < decidedBefore) {
-          throw new Error('합치기 결과에서 기존 결정 사항이 누락되었습니다')
+        if (sourcedLeafFingerprintsOf([result]).size < sourcedLeafFingerprintsOf(items).size) {
+          throw new Error('합치기 결과에서 기존 주제 세부사항이 누락되었습니다')
         }
       } catch (caught) {
-        // 구간별 JSON과 실패 응답은 남기고, 미결정의 상태를 확인하지 못한 결과는 확정하지 않는다.
+        // 구간별 JSON과 실패 응답은 남기고, 세부사항을 확인하지 못한 결과는 확정하지 않는다.
         throw topicReconciliationError(messageOf(caught))
       }
       next.push(result)
@@ -323,7 +355,7 @@ const reduceTopics = async ({
     level = next
     round += 1
   }
-  return level[0] ?? { schemaVersion: 1 as const, topics: [] }
+  return level[0] ?? { schemaVersion: 2 as const, topics: [] }
 }
 
 const topicMapReduce = async ({
@@ -377,7 +409,7 @@ export const runTopicAnalysis = async ({
 }: RunTopicAnalysisParams): Promise<TopicAnalysisAttempt> => {
   const attemptId = randomUUID()
   const workDir = await createAttemptDir({ meetingId, attemptId })
-  const emptyResult: TopicAnalysisResult = { schemaVersion: 1, topics: [] }
+  const emptyResult: TopicAnalysisResult = { schemaVersion: 2, topics: [] }
   if (!utterances.length) {
     const attempt: TopicAnalysisAttempt = {
       id: attemptId,

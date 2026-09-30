@@ -239,6 +239,26 @@ describe('prototype transcript reading', () => {
     })
   })
 
+  it('문서가 지정한 전사를 열고 나중 전사로 바꾸지 않는다', async () => {
+    state.request
+      .mockResolvedValueOnce({
+        ...remoteRecording,
+        artifacts: [
+          ...remoteRecording.artifacts,
+          { id: 'new-transcript', kind: 'transcript', completed: true }
+        ]
+      })
+      .mockResolvedValueOnce(remoteTranscript)
+    const { readPrototypeTranscript } = await import('./artifacts')
+    await readPrototypeTranscript({
+      recordingId: 'recording-remote',
+      artifactId: 'artifact-transcript'
+    })
+    expect(state.request).toHaveBeenNthCalledWith(2, {
+      path: '/artifacts/artifact-transcript/content'
+    })
+  })
+
   it('rejects a remote transcript response when the owner changes between awaits', async () => {
     state.request.mockResolvedValueOnce(remoteRecording).mockImplementationOnce(async () => {
       state.owner = 'owner-2'

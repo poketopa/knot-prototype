@@ -5,8 +5,12 @@
 
 import type {
   TopicAnalysisDocument,
+  TopicAnalysisGeneratedTopic,
+  TopicAnalysisOutlineItem,
+  TopicAnalysisOutlineSection,
   TopicAnalysisPoint,
   TopicAnalysisResult,
+  TopicAnalysisSourceSection,
   TopicAnalysisTopic,
   TopicAnalysisUtterance
 } from './types'
@@ -208,10 +212,10 @@ export const cleanSummary = (raw: string) => {
     .trim()
 }
 
-export const TOPIC_ANALYSIS_PROMPT_VERSION = 'topic-analysis-v1'
+export const TOPIC_ANALYSIS_PROMPT_VERSION = 'topic-analysis-v2'
 
-/** 구조화 결과에는 요약문보다 많은 출력 공간이 필요하다. */
-export const TOPIC_ANALYSIS_MAX_PREDICT_TOKENS = 3000
+/** 구조화 결과에는 자유 섹션과 상세 outline까지 담을 출력 공간이 필요하다. */
+export const TOPIC_ANALYSIS_MAX_PREDICT_TOKENS = 3400
 
 /** 시스템·문서 목록·형식 지시까지 포함한 로컬 입력 예산. */
 export const TOPIC_ANALYSIS_LOCAL_INPUT_CHARS = Math.floor(
@@ -228,31 +232,40 @@ number ::= "-"? ("0" | [1-9] [0-9]*) ("." [0-9]+)? ([eE] [+-]? [0-9]+)?
 ws ::= [ \t\n\r]*`
 
 export const TOPIC_ANALYSIS_SYSTEM_PROMPT = [
-  '당신은 한국어 회의록에서 주제별 결정 사항을 구조화하는 도우미입니다.',
+  '당신은 한국어 회의록에서 주제별 문서 초안을 구조화하는 도우미입니다.',
   '회의록에 실제로 나온 내용만 사용합니다.',
-  '회의에서 확정된 결정과 아직 미결정인 사항을 반드시 구분합니다.',
+  '회의록에 없는 후속 구현 사실, 확정되지 않은 추측, 외부 지식, 날짜, 숫자, 사람 이름을 만들지 않습니다.',
   '한 회의에서 여러 주제가 나오면 주제마다 별도 topic으로 나눕니다.',
-  '기존 문서 목록에 같은 주제가 있으면 existingDocumentId를 사용하고, 새 주제면 existingDocumentId와 newDocumentId를 모두 null로 둡니다.',
-  '새 문서 UUID는 절대 만들지 않습니다. 앱이 검증 뒤 배정합니다.',
-  '각 결정과 미결정에는 근거가 된 sourceUtteranceIds를 1개 이상 넣습니다.',
+  '같은 주제가 기존 문서 목록에 있어도 기존 문서 id를 사용하지 않습니다. 이번 녹음의 주제마다 새 문서를 만듭니다.',
+  'documentId는 null로 출력합니다. 앱이 검증 뒤 새 UUID를 배정합니다.',
+  'domain은 기존 문서 목록의 넓은 분류를 참고하되, 회의 내용에 맞는 짧은 한국어 도메인 이름으로 고릅니다.',
+  'summarySections는 문서 상단의 간결한 핵심입니다. "결정 사항", "미결정" 같은 고정 템플릿 제목을 쓰지 말고 주제에 맞는 heading을 고릅니다.',
+  'outline은 하단의 자세한 개괄식 논의입니다. 근거, 이유, 대안, 불확실성, 후속 질문 등 회의록에 나온 중요한 세부사항을 보존합니다.',
+  '각 summarySections 항목과 outline.items 항목에는 근거가 된 sourceUtteranceIds를 1개 이상 넣습니다.',
   'sourceUtteranceIds에는 회의록의 SOURCE_ID 값만 사용합니다. time 값이나 speaker 값은 넣지 않습니다.',
-  'SOURCE_ID와 기존 문서 id는 입력으로 받은 값만 사용합니다.',
+  'SOURCE_ID는 입력으로 받은 값만 사용합니다.',
   '어떤 주제를 오늘 논의하지 않았다는 언급만 있으면 그 주제의 topic을 만들지 않습니다.',
-  '논의할 내용이 없으면 topics를 빈 배열로 둡니다.',
+  '일상 대화나 정보 공유도 나중에 다시 볼 의미가 있으면 topic으로 만듭니다. 의미 있는 논의가 없으면 topics를 빈 배열로 둡니다.',
   '항상 JSON만 출력합니다. 설명, 인사말, 코드펜스를 붙이지 않습니다.'
 ].join('\n')
 
 const TOPIC_ANALYSIS_SCHEMA_TEXT = [
   '{',
-  '  "schemaVersion": 1,',
+  '  "schemaVersion": 2,',
   '  "topics": [',
   '    {',
-  '      "existingDocumentId": "기존 문서 UUID 또는 null",',
-  '      "newDocumentId": null,',
+  '      "documentId": null,',
+  '      "domain": "넓은 분류 이름",',
   '      "title": "주제 제목",',
-  '      "overview": "이번 회의에서 이 주제를 어떻게 다뤘는지 한두 문장",',
-  '      "decisions": [{"text": "확정된 결정", "sourceUtteranceIds": ["S001"]}],',
-  '      "unresolved": [{"text": "미결정 사항", "sourceUtteranceIds": ["S002"]}]',
+  '      "summarySections": [',
+  '        {"heading": "주제에 맞는 핵심 제목", "text": "간결한 핵심 내용", "sourceUtteranceIds": ["S001"]}',
+  '      ],',
+  '      "outline": [',
+  '        {',
+  '          "heading": "논의 상세 제목",',
+  '          "items": [{"text": "구체적인 내용·근거·대안·불확실성", "sourceUtteranceIds": ["S002"]}]',
+  '        }',
+  '      ]',
   '    }',
   '  ]',
   '}'
@@ -360,8 +373,10 @@ const formatDocumentCatalog = ({ documents }: { documents: TopicAnalysisDocument
   return documents
     .map((document) => {
       const overview = document.overview?.trim()
+      const domain = document.domain?.trim()
+      const title = domain ? `${domain} / ${document.title}` : document.title
 
-      return `- ${document.id}: ${document.title}${overview ? ` — ${overview}` : ''}`
+      return `- ${document.id}: ${title}${overview ? ` — ${overview}` : ''}`
     })
     .join('\n')
 }
@@ -386,8 +401,10 @@ interface BuildTopicPromptParams {
 
 export const buildTopicWholePrompt = ({ utterances, documents }: BuildTopicPromptParams) =>
   [
-    '아래 기존 문서 목록과 회의록을 보고 주제별 결정/미결정을 JSON으로 출력하세요.',
+    '아래 기존 문서 목록은 도메인 이름 참고용입니다. 기존 문서 id를 결과에 쓰지 말고, 회의록을 이번 녹음의 새 주제 문서 JSON으로 출력하세요.',
     'sourceUtteranceIds에는 각 줄의 SOURCE_ID만 넣으세요. time 값(예: 00:00:00)은 근거 id가 아닙니다.',
+    '상단 summarySections에는 가장 중요한 핵심을 주제별 소제목으로 간결하게 쓰고, 하단 outline에는 이유·대안·불확실성·후속 질문 같은 구체 내용을 빠뜨리지 마세요.',
+    '회의록에 없는 구현 완료, 후속 사실, 외부 지식을 단정하지 마세요.',
     '',
     '## 기존 문서 목록',
     formatDocumentCatalog({ documents }),
@@ -407,8 +424,11 @@ export const buildTopicChunkPrompt = ({
 }: BuildTopicPromptParams & { index: number; total: number }) =>
   [
     `아래는 회의록 전체 ${total}개 구간 중 ${index + 1}번째 구간입니다.`,
-    '이 구간에 실제로 나온 주제별 결정/미결정만 JSON으로 출력하세요.',
+    '이 구간에 실제로 나온 새 주제 문서 후보만 JSON으로 출력하세요.',
+    '기존 문서 목록은 도메인 이름 참고용입니다. 기존 문서 id를 결과에 쓰지 마세요.',
     'sourceUtteranceIds에는 각 줄의 SOURCE_ID만 넣으세요. time 값(예: 00:00:00)은 근거 id가 아닙니다.',
+    '상단 summarySections와 하단 outline 모두 구체적인 근거 발화 id를 보존하세요.',
+    '회의록에 없는 구현 완료, 후속 사실, 외부 지식을 단정하지 마세요.',
     '',
     '## 기존 문서 목록',
     formatDocumentCatalog({ documents }),
@@ -434,35 +454,41 @@ export const buildTopicReducePrompt = ({
   )
   const modelVisibleSourceIds = (sourceUtteranceIds: string[]) =>
     sourceUtteranceIds.map((sourceId) => sourceAliasesByOriginalId.get(sourceId) ?? sourceId)
+  const modelVisibleSection = <T extends { sourceUtteranceIds: string[] }>(item: T) => ({
+    ...item,
+    sourceUtteranceIds: modelVisibleSourceIds(item.sourceUtteranceIds)
+  })
   const modelVisiblePartials = partials.map((partial) => ({
     ...partial,
     topics: partial.topics.map((topic) => ({
       ...topic,
-      newDocumentId: null,
-      decisions: topic.decisions.map((point) => ({
-        ...point,
-        sourceUtteranceIds: modelVisibleSourceIds(point.sourceUtteranceIds)
-      })),
-      unresolved: topic.unresolved.map((point) => ({
-        ...point,
-        sourceUtteranceIds: modelVisibleSourceIds(point.sourceUtteranceIds)
-      }))
+      documentId: null,
+      summarySections:
+        'summarySections' in topic ? topic.summarySections.map(modelVisibleSection) : [],
+      outline:
+        'outline' in topic
+          ? topic.outline.map((section) => ({
+              ...section,
+              items: section.items.map(modelVisibleSection)
+            }))
+          : []
     }))
   }))
 
   return [
     '아래는 한 회의를 구간별로 분석한 JSON입니다.',
-    '중복되는 기존 문서 topic은 하나로 합치고, 앞 구간의 제안이 뒤 구간에서 확정되면 최종 상태에 맞춰 decisions/unresolved를 정리하세요.',
-    'newDocumentId는 모두 null로 유지하세요. 새 문서 UUID는 앱이 최종 검증 뒤 배정합니다.',
+    '같은 주제는 하나의 topic으로 합치고, 서로 다른 주제는 별도 topic으로 유지하세요.',
+    'documentId는 모두 null로 유지하세요. 새 문서 UUID는 앱이 최종 검증 뒤 배정합니다.',
     'sourceUtteranceIds는 SOURCE_ID 형식(S001, S002...)으로 보존하고, 입력에 없는 id를 만들지 마세요.',
-    '입력의 모든 결정/미결정과 그 sourceUtteranceIds를 빠뜨리지 말고 결과에 반영하세요.',
-    '앞 구간의 미결정이 뒤 구간에서 확정되면 해당 미결정을 unresolved에서 빼고, 이전 논의와 최종 결정의 모든 sourceUtteranceIds를 합쳐 decisions에 넣으세요.',
+    '입력의 모든 summarySections/outline 항목과 sourceUtteranceIds를 빠뜨리지 말고 결과에 반영하세요.',
+    '중복 문장은 합칠 수 있지만, 이유·대안·불확실성·후속 질문 같은 중요한 세부사항은 outline에 보존하세요.',
+    '회의록에 없는 구현 완료, 후속 사실, 외부 지식을 단정하지 마세요.',
     '',
     '## 기존 문서 목록',
     formatDocumentCatalog({ documents }),
     '',
     '## 구간별 분석',
-    JSON.stringify({ schemaVersion: 1, partials: modelVisiblePartials }),
+    JSON.stringify({ schemaVersion: 2, partials: modelVisiblePartials }),
     '',
     '## 출력 JSON 형식',
     TOPIC_ANALYSIS_SCHEMA_TEXT
@@ -503,11 +529,46 @@ const readString = ({ value, label }: { value: unknown; label: string }) => {
 
 const readNullableString = ({ value, label }: { value: unknown; label: string }) => {
   if (value === null) return null
+  if (value === undefined) return null
   if (typeof value !== 'string' || !value.trim()) {
     throw new Error(`AI 분석 결과의 ${label} 값이 잘못됐습니다`)
   }
 
   return value.trim()
+}
+
+const readSourceIds = ({
+  value,
+  sourceAliases,
+  originalUtteranceIds,
+  label
+}: {
+  value: unknown
+  sourceAliases: Map<string, string>
+  originalUtteranceIds: Set<string>
+  label: string
+}) => {
+  if (!Array.isArray(value) || !value.length) {
+    throw new Error(`AI 분석 결과의 ${label} 항목에 근거 발화가 없습니다`)
+  }
+
+  const rawSourceIds = [
+    ...new Set(
+      value.map((sourceId) => readString({ value: sourceId, label: 'sourceUtteranceIds' }))
+    )
+  ]
+
+  return [
+    ...new Set(
+      rawSourceIds.map((sourceId) => {
+        const originalId = sourceAliases.get(sourceId)
+        if (originalId) return originalId
+        if (originalUtteranceIds.has(sourceId)) return sourceId
+
+        throw new Error(`AI 분석 결과가 알 수 없는 발화 id를 참조했습니다: ${sourceId}`)
+      })
+    )
+  ]
 }
 
 const readPoint = ({
@@ -523,27 +584,14 @@ const readPoint = ({
 }): TopicAnalysisPoint => {
   if (!isRecord(value)) throw new Error(`AI 분석 결과의 ${label} 항목이 객체가 아닙니다`)
 
-  const sourceIds = value.sourceUtteranceIds
-  if (!Array.isArray(sourceIds) || !sourceIds.length) {
-    throw new Error(`AI 분석 결과의 ${label} 항목에 근거 발화가 없습니다`)
-  }
-
-  const rawSourceIds = [
-    ...new Set(
-      sourceIds.map((sourceId) => readString({ value: sourceId, label: 'sourceUtteranceIds' }))
-    )
-  ]
-  const uniqueSourceIds = rawSourceIds.map((sourceId) => {
-    const originalId = sourceAliases.get(sourceId)
-    if (originalId) return originalId
-    if (originalUtteranceIds.has(sourceId)) return sourceId
-
-    throw new Error(`AI 분석 결과가 알 수 없는 발화 id를 참조했습니다: ${sourceId}`)
-  })
-
   return {
     text: readString({ value: value.text, label: `${label}.text` }),
-    sourceUtteranceIds: [...new Set(uniqueSourceIds)]
+    sourceUtteranceIds: readSourceIds({
+      value: value.sourceUtteranceIds,
+      sourceAliases,
+      originalUtteranceIds,
+      label
+    })
   }
 }
 
@@ -565,6 +613,112 @@ const readPoints = ({
   )
 }
 
+const readSourceSection = ({
+  value,
+  sourceAliases,
+  originalUtteranceIds,
+  label
+}: {
+  value: unknown
+  sourceAliases: Map<string, string>
+  originalUtteranceIds: Set<string>
+  label: string
+}): TopicAnalysisSourceSection => {
+  if (!isRecord(value)) throw new Error(`AI 분석 결과의 ${label} 항목이 객체가 아닙니다`)
+
+  return {
+    heading: readString({ value: value.heading, label: `${label}.heading` }),
+    text: readString({ value: value.text, label: `${label}.text` }),
+    sourceUtteranceIds: readSourceIds({
+      value: value.sourceUtteranceIds,
+      sourceAliases,
+      originalUtteranceIds,
+      label
+    })
+  }
+}
+
+const readSourceSections = ({
+  value,
+  sourceAliases,
+  originalUtteranceIds,
+  label
+}: {
+  value: unknown
+  sourceAliases: Map<string, string>
+  originalUtteranceIds: Set<string>
+  label: string
+}) => {
+  if (!Array.isArray(value)) throw new Error(`AI 분석 결과의 ${label} 배열이 없습니다`)
+
+  return value.map((section, index) =>
+    readSourceSection({
+      value: section,
+      sourceAliases,
+      originalUtteranceIds,
+      label: `${label}[${index}]`
+    })
+  )
+}
+
+const readOutlineItem = ({
+  value,
+  sourceAliases,
+  originalUtteranceIds,
+  label
+}: {
+  value: unknown
+  sourceAliases: Map<string, string>
+  originalUtteranceIds: Set<string>
+  label: string
+}): TopicAnalysisOutlineItem => {
+  if (!isRecord(value)) throw new Error(`AI 분석 결과의 ${label} 항목이 객체가 아닙니다`)
+
+  return {
+    text: readString({ value: value.text, label: `${label}.text` }),
+    sourceUtteranceIds: readSourceIds({
+      value: value.sourceUtteranceIds,
+      sourceAliases,
+      originalUtteranceIds,
+      label
+    })
+  }
+}
+
+const readOutline = ({
+  value,
+  sourceAliases,
+  originalUtteranceIds,
+  label
+}: {
+  value: unknown
+  sourceAliases: Map<string, string>
+  originalUtteranceIds: Set<string>
+  label: string
+}): TopicAnalysisOutlineSection[] => {
+  if (!Array.isArray(value)) throw new Error(`AI 분석 결과의 ${label} 배열이 없습니다`)
+
+  return value.map((section, sectionIndex) => {
+    const sectionLabel = `${label}[${sectionIndex}]`
+    if (!isRecord(section)) throw new Error(`AI 분석 결과의 ${sectionLabel} 항목이 객체가 아닙니다`)
+    if (!Array.isArray(section.items) || !section.items.length) {
+      throw new Error(`AI 분석 결과의 ${sectionLabel}.items 배열이 비어 있습니다`)
+    }
+
+    return {
+      heading: readString({ value: section.heading, label: `${sectionLabel}.heading` }),
+      items: section.items.map((item, itemIndex) =>
+        readOutlineItem({
+          value: item,
+          sourceAliases,
+          originalUtteranceIds,
+          label: `${sectionLabel}.items[${itemIndex}]`
+        })
+      )
+    }
+  })
+}
+
 interface NormalizeTopicAnalysisParams {
   raw: string
   utterances: TopicAnalysisUtterance[]
@@ -572,23 +726,21 @@ interface NormalizeTopicAnalysisParams {
   createDocumentId?: () => string
 }
 
-export const parseTopicAnalysis = ({
-  raw,
-  utterances,
+const parseLegacyTopicAnalysis = ({
+  parsed,
+  sourceAliases,
+  originalUtteranceIds,
   documents,
   createDocumentId
-}: NormalizeTopicAnalysisParams): TopicAnalysisResult => {
-  const parsed = readJsonObject(raw)
-  if (!isRecord(parsed) || parsed.schemaVersion !== 1 || !Array.isArray(parsed.topics)) {
-    throw new Error('AI 분석 결과 schemaVersion/topics 형식이 맞지 않습니다')
-  }
-
-  const { aliases: sourceAliases, originalIds: originalUtteranceIds } =
-    topicAnalysisSourceAliases(utterances)
+}: Omit<NormalizeTopicAnalysisParams, 'raw' | 'utterances'> & {
+  parsed: Record<string, unknown>
+  sourceAliases: Map<string, string>
+  originalUtteranceIds: Set<string>
+}): TopicAnalysisResult => {
   const knownDocumentIds = new Set(documents.map((document) => document.id))
   const normalizedTopics: TopicAnalysisTopic[] = []
 
-  for (const [index, rawTopic] of parsed.topics.entries()) {
+  for (const [index, rawTopic] of (parsed.topics as unknown[]).entries()) {
     if (!isRecord(rawTopic)) throw new Error(`AI 분석 결과 topics[${index}] 항목이 객체가 아닙니다`)
 
     const existingDocumentId = readNullableString({
@@ -636,6 +788,94 @@ export const parseTopicAnalysis = ({
   }
 
   return { schemaVersion: 1, topics: mergeTopicAnalysisTopics(normalizedTopics) }
+}
+
+const parseGeneratedTopicAnalysis = ({
+  parsed,
+  sourceAliases,
+  originalUtteranceIds,
+  createDocumentId
+}: Pick<NormalizeTopicAnalysisParams, 'createDocumentId'> & {
+  parsed: Record<string, unknown>
+  sourceAliases: Map<string, string>
+  originalUtteranceIds: Set<string>
+}): TopicAnalysisResult => {
+  const normalizedTopics: TopicAnalysisGeneratedTopic[] = []
+
+  for (const [index, rawTopic] of (parsed.topics as unknown[]).entries()) {
+    if (!isRecord(rawTopic)) throw new Error(`AI 분석 결과 topics[${index}] 항목이 객체가 아닙니다`)
+    const modelDocumentId = readNullableString({
+      value: rawTopic.documentId,
+      label: `topics[${index}].documentId`
+    })
+    if (modelDocumentId) {
+      throw new Error(`AI 분석 결과 topics[${index}]가 새 문서 id를 직접 만들었습니다`)
+    }
+    const documentId = createDocumentId?.()
+    if (!documentId) throw new Error('새 문서 id 생성기가 없어 AI 분석 결과를 확정할 수 없습니다')
+
+    const summarySections = readSourceSections({
+      value: rawTopic.summarySections,
+      sourceAliases,
+      originalUtteranceIds,
+      label: `topics[${index}].summarySections`
+    })
+    const outline = readOutline({
+      value: rawTopic.outline,
+      sourceAliases,
+      originalUtteranceIds,
+      label: `topics[${index}].outline`
+    })
+    if (!summarySections.length && !outline.length) {
+      throw new Error(`AI 분석 결과 topics[${index}]에 정리 내용이 없습니다`)
+    }
+
+    normalizedTopics.push({
+      documentId,
+      domain: readString({ value: rawTopic.domain, label: `topics[${index}].domain` }),
+      title: readString({ value: rawTopic.title, label: `topics[${index}].title` }),
+      summarySections,
+      outline
+    } as TopicAnalysisGeneratedTopic)
+  }
+
+  return { schemaVersion: 2, topics: normalizedTopics }
+}
+
+export const parseTopicAnalysis = ({
+  raw,
+  utterances,
+  documents,
+  createDocumentId
+}: NormalizeTopicAnalysisParams): TopicAnalysisResult => {
+  const parsed = readJsonObject(raw)
+  if (
+    !isRecord(parsed) ||
+    (parsed.schemaVersion !== 1 && parsed.schemaVersion !== 2) ||
+    !Array.isArray(parsed.topics)
+  ) {
+    throw new Error('AI 분석 결과 schemaVersion/topics 형식이 맞지 않습니다')
+  }
+
+  const { aliases: sourceAliases, originalIds: originalUtteranceIds } =
+    topicAnalysisSourceAliases(utterances)
+
+  if (parsed.schemaVersion === 1) {
+    return parseLegacyTopicAnalysis({
+      parsed,
+      sourceAliases,
+      originalUtteranceIds,
+      documents,
+      createDocumentId
+    })
+  }
+
+  return parseGeneratedTopicAnalysis({
+    parsed,
+    sourceAliases,
+    originalUtteranceIds,
+    createDocumentId
+  })
 }
 
 export const mergeTopicAnalysisTopics = (topics: TopicAnalysisTopic[]) => {
