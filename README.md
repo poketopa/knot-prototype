@@ -6,11 +6,11 @@ Knot Meeting Prototype은 macOS 개인 회의 기록 검증 도구입니다. Git
 
 ## 상태
 
-`v0.3.0-preview.5`는 긴 녹음 전송과 AI 처리, 회의별 정리 화면, 앱 내 업데이트를 추가한 공유 API 연결 preview입니다. macOS 14 이상 Apple Silicon Mac에서 사용하며, 앱 사용자는 로컬 Docker나 OAuth 앱을 설정할 필요가 없습니다.
+`v0.3.0-preview.6`는 전사 원문을 바탕으로 회의 전체를 내용에 맞게 정리하고, 기존 정리본을 보존하며 다시 정리할 수 있는 공유 API 연결 preview입니다. macOS 14 이상 Apple Silicon Mac에서 사용하며, 앱 사용자는 로컬 Docker나 OAuth 앱을 설정할 필요가 없습니다.
 
 이 검증 환경에 업로드한 녹음·전사·AI 정리 파일은 공개 읽기가 가능합니다. 공개해도 되는 테스트 회의만 사용하세요.
 
-릴리스 노트: [docs/releases/0.3.0-preview.5.md](docs/releases/0.3.0-preview.5.md)
+릴리스 노트: [docs/releases/0.3.0-preview.6.md](docs/releases/0.3.0-preview.6.md)
 
 ## 기능
 
@@ -23,7 +23,7 @@ Knot Meeting Prototype은 macOS 개인 회의 기록 검증 도구입니다. Git
 
 ## 앱 설치
 
-[공유 서버 연결 버전](https://github.com/poketopa/knot-prototype/releases/tag/v0.3.0-preview.5)에서 DMG를 내려받아 Applications에 복사합니다. 첫 실행에서 GitHub에 로그인하고 모델을 설정합니다. preview.4 이하에서는 preview.5를 한 번 수동 설치해야 합니다. 그 뒤에는 앱 안에서 새 버전을 확인하고 내려받아 설치할 수 있습니다.
+[공유 서버 연결 버전](https://github.com/poketopa/knot-prototype/releases/tag/v0.3.0-preview.6)에서 DMG를 내려받아 Applications에 복사합니다. 첫 실행에서 GitHub에 로그인하고 모델을 설정합니다. preview.5 사용자는 앱 안에서 새 버전을 확인하고 내려받아 설치할 수 있습니다. preview.4 이하에서는 먼저 preview.5 이상을 한 번 수동 설치해야 합니다.
 
 ## 로컬 개발 시작
 
