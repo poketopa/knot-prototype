@@ -7,6 +7,7 @@ import { info, messageOf, warn } from './log'
 import { pickAvailableVersion } from './updateResult'
 import { isRecordingBusy } from './audio/session'
 import { isPipelineQueueBusy } from './pipeline/queue'
+import { markMainWindowQuitting } from './windows/main'
 
 const DEV_MODE_MESSAGE = '개발 모드에서는 업데이트를 확인할 수 없습니다'
 const CHECK_FAILED_MESSAGE = '업데이트를 확인하지 못했습니다. 네트워크 연결을 확인해 주세요'
@@ -71,5 +72,6 @@ export const downloadUpdate = async () => {
 export const installUpdate = () => {
   if (isRecordingBusy() || isPipelineQueueBusy()) throw new Error(INSTALL_BUSY_MESSAGE)
 
+  markMainWindowQuitting()
   autoUpdater.quitAndInstall()
 }

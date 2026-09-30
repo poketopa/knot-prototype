@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const checkForUpdatesMock = vi.fn()
 const downloadUpdateMock = vi.fn()
 const quitAndInstallMock = vi.fn()
+const markMainWindowQuittingMock = vi.fn()
+const installCalls: string[] = []
 const autoUpdater = {
   autoDownload: true,
   autoInstallOnAppQuit: true,
@@ -26,6 +28,7 @@ vi.mock('@electron-toolkit/utils', () => ({
 vi.mock('electron', () => ({ app: { getVersion: () => '0.3.0-preview.5' } }))
 vi.mock('./audio/session', () => ({ isRecordingBusy: () => recordingBusy }))
 vi.mock('./pipeline/queue', () => ({ isPipelineQueueBusy: () => pipelineBusy }))
+vi.mock('./windows/main', () => ({ markMainWindowQuitting: markMainWindowQuittingMock }))
 vi.mock('./log', () => ({
   info: vi.fn(),
   warn: vi.fn(),
@@ -39,6 +42,9 @@ describe('updater', () => {
     isDev = false
     recordingBusy = false
     pipelineBusy = false
+    installCalls.length = 0
+    markMainWindowQuittingMock.mockImplementation(() => installCalls.push('mark'))
+    quitAndInstallMock.mockImplementation(() => installCalls.push('quit'))
     autoUpdater.autoDownload = true
     autoUpdater.autoInstallOnAppQuit = true
     autoUpdater.allowPrerelease = false
@@ -73,19 +79,23 @@ describe('updater', () => {
     const { installUpdate } = await import('./updater')
 
     expect(() => installUpdate()).toThrow('녹음이나 AI 처리가 끝난 뒤 설치해 주세요')
+    expect(markMainWindowQuittingMock).not.toHaveBeenCalled()
     expect(quitAndInstallMock).not.toHaveBeenCalled()
 
     recordingBusy = false
     pipelineBusy = true
     expect(() => installUpdate()).toThrow('녹음이나 AI 처리가 끝난 뒤 설치해 주세요')
+    expect(markMainWindowQuittingMock).not.toHaveBeenCalled()
     expect(quitAndInstallMock).not.toHaveBeenCalled()
   })
 
-  it('installs when no local work is running', async () => {
+  it('marks the main window as quitting before native updater install', async () => {
     const { installUpdate } = await import('./updater')
 
     installUpdate()
 
+    expect(markMainWindowQuittingMock).toHaveBeenCalledTimes(1)
     expect(quitAndInstallMock).toHaveBeenCalledTimes(1)
+    expect(installCalls).toEqual(['mark', 'quit'])
   })
 })
