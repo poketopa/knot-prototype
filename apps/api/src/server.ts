@@ -520,7 +520,8 @@ export function buildServer({
         user,
         request.params.id,
         request.body.analysisArtifactId,
-        request.body.transcriptArtifactId
+        request.body.transcriptArtifactId,
+        request.body.replaceRecordingDocuments === true
       )
     }
   )
@@ -578,7 +579,7 @@ export function buildServer({
               dd.name AS domain
        FROM document_tree_documents d
        JOIN document_domains dd ON dd.user_id = d.user_id AND dd.id = d.domain_id
-       WHERE d.user_id = $1
+       WHERE d.user_id = $1 AND d.is_active = true
        ORDER BY dd.name ASC, d.recording_started_at DESC, d.title ASC`,
       [user.id]
     )
@@ -600,11 +601,13 @@ export function buildServer({
                 d.latest_version,
                 d.updated_at,
                 d.transcript_artifact_id,
+                r.duration_ms,
                 s.id AS snapshot_id,
                 s.body,
                 dd.name AS domain
          FROM document_tree_documents d
          JOIN document_domains dd ON dd.user_id = d.user_id AND dd.id = d.domain_id
+         JOIN recordings r ON r.user_id = d.user_id AND r.id = d.recording_id
          JOIN document_tree_snapshots s ON s.user_id = d.user_id AND s.id = d.latest_snapshot_id
          WHERE d.user_id = $1 AND d.id = $2`,
         [user.id, request.params.id]
@@ -617,6 +620,7 @@ export function buildServer({
         ...mapDocumentTreeItem(row),
         body: row.body,
         transcriptArtifactId: row.transcript_artifact_id,
+        durationSec: Math.floor(row.duration_ms / 1000),
         snapshotId: row.snapshot_id
       }
     }
@@ -773,7 +777,8 @@ async function publishRecording(
   user: AuthenticatedUser,
   recordingId: string,
   analysisArtifactId: string,
-  transcriptArtifactId?: string
+  transcriptArtifactId?: string,
+  replaceRecordingDocuments = false
 ) {
   return withTransaction(db, async (client) => {
     await client.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [user.id])
@@ -793,7 +798,8 @@ async function publishRecording(
     }
     if (
       recording.rows[0].published_analysis_id &&
-      recording.rows[0].published_analysis_id !== analysisArtifactId
+      recording.rows[0].published_analysis_id !== analysisArtifactId &&
+      !replaceRecordingDocuments
     ) {
       throw new ApiError(
         409,
@@ -834,8 +840,12 @@ async function publishRecording(
         recording: recording.rows[0],
         transcript: transcript.rows[0],
         analysisArtifactId,
-        ai
+        ai,
+        replaceRecordingDocuments
       })
+    }
+    if (replaceRecordingDocuments) {
+      throw new ApiError(422, 'AI_REANALYSIS_V2_REQUIRED', 'Reanalysis requires V2 documents')
     }
     const topics = mergeTopics(ai)
 
@@ -958,7 +968,8 @@ async function publishRecordingV2({
   recording,
   transcript,
   analysisArtifactId,
-  ai
+  ai,
+  replaceRecordingDocuments
 }: {
   client: DbClient
   user: AuthenticatedUser
@@ -966,6 +977,7 @@ async function publishRecordingV2({
   transcript: ArtifactRow
   analysisArtifactId: string
   ai: AiAnalysisV2
+  replaceRecordingDocuments: boolean
 }) {
   const documents = []
   const topicDocumentIds = new Set<string>()
@@ -1087,6 +1099,13 @@ async function publishRecordingV2({
       latestVersion: existingRow.latest_version,
       updatedAt: existingRow.updated_at.toISOString()
     })
+  }
+  if (replaceRecordingDocuments) {
+    await client.query(
+      `UPDATE document_tree_documents SET is_active = false
+       WHERE user_id = $1 AND recording_id = $2 AND analysis_artifact_id <> $3`,
+      [user.id, recording.id, analysisArtifactId]
+    )
   }
   const response = { documents }
   await client.query(
@@ -1608,6 +1627,7 @@ type DocumentTreeItemRow = {
 
 type DocumentTreeDetailRow = DocumentTreeItemRow & {
   transcript_artifact_id: string
+  duration_ms: number
   snapshot_id: string
   body: unknown
 }

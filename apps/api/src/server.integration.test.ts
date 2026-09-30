@@ -441,6 +441,78 @@ describePg('prototype API with real PostgreSQL and limited runtime role', () => 
     })
   })
 
+  it('replaces only active documents after valid owner-scoped reanalysis and preserves old snapshots', async () => {
+    const recording = '00000000-0000-4000-8000-000000003001'
+    const transcriptId = '00000000-0000-4000-8000-000000003002'
+    const oldAnalysis = '00000000-0000-4000-8000-000000003003'
+    const oldDocument = '00000000-0000-4000-8000-000000003004'
+    const nextAnalysis = '00000000-0000-4000-8000-000000003005'
+    const nextDocument = '00000000-0000-4000-8000-000000003006'
+    const invalidAnalysis = '00000000-0000-4000-8000-000000003007'
+    const invalidDocument = '00000000-0000-4000-8000-000000003008'
+    await putRecording(recording, '2026-10-05T02:00:00.000Z')
+    await putJsonArtifact(recording, transcriptId, 'transcript', transcript(['reanalysis-u1']))
+    await putJsonArtifact(recording, oldAnalysis, 'ai_analysis', {
+      schemaVersion: 2,
+      topics: [v2Topic(oldDocument, '개발', '이전 결과', ['reanalysis-u1'])]
+    })
+    expect((await publish(recording, oldAnalysis)).statusCode).toBe(200)
+    await putJsonArtifact(recording, invalidAnalysis, 'ai_analysis', {
+      schemaVersion: 2,
+      topics: [v2Topic(invalidDocument, '개발', '잘못된 결과', ['missing'])]
+    })
+    expect((await publish(recording, invalidAnalysis, token, transcriptId, true)).statusCode).toBe(
+      422
+    )
+    expect(
+      await scalar(
+        'SELECT count(*)::int FROM document_tree_documents WHERE user_id = $1 AND id = $2 AND is_active',
+        [userId, oldDocument]
+      )
+    ).toBe(1)
+    await putJsonArtifact(recording, nextAnalysis, 'ai_analysis', {
+      schemaVersion: 2,
+      topics: [v2Topic(nextDocument, '개발', '새 정리', ['reanalysis-u1'])]
+    })
+    expect((await publish(recording, nextAnalysis, token2, transcriptId, true)).statusCode).toBe(
+      404
+    )
+    expect((await publish(recording, nextAnalysis, token, transcriptId)).statusCode).toBe(409)
+    const result = await publish(recording, nextAnalysis, token, transcriptId, true)
+    expect(result.statusCode).toBe(200)
+    expect((await publish(recording, nextAnalysis, token, transcriptId, true)).json()).toEqual(
+      result.json()
+    )
+    // Replaying the older successful request must not make its documents current again.
+    expect((await publish(recording, oldAnalysis)).statusCode).toBe(200)
+    const tree = await app.inject({
+      method: 'GET',
+      url: '/v1/document-tree',
+      headers: authHeader()
+    })
+    const ids = tree.json().documents.map((document: { id: string }) => document.id)
+    expect(ids).toContain(nextDocument)
+    expect(ids).not.toContain(oldDocument)
+    const oldDetail = await app.inject({
+      method: 'GET',
+      url: `/v1/document-tree/${oldDocument}`,
+      headers: authHeader()
+    })
+    expect(oldDetail.statusCode).toBe(200)
+    expect(
+      await scalar(
+        'SELECT count(*)::int FROM document_tree_snapshots WHERE user_id = $1 AND recording_id = $2',
+        [userId, recording]
+      )
+    ).toBe(2)
+    expect(
+      await scalar('SELECT count(*)::int FROM artifacts WHERE user_id = $1 AND recording_id = $2', [
+        userId,
+        recording
+      ])
+    ).toBe(4)
+  })
+
   it('publishes V2 topics as distinct tree documents with replay, rollback, and tenant isolation', async () => {
     const r1 = '00000000-0000-4000-8000-000000001101'
     const r2 = '00000000-0000-4000-8000-000000001102'
@@ -499,6 +571,7 @@ describePg('prototype API with real PostgreSQL and limited runtime role', () => 
     expect(detail.statusCode).toBe(200)
     expect(detail.json()).toMatchObject({
       id: d1,
+      durationSec: 1,
       transcriptArtifactId: t1,
       snapshotId: expect.any(String),
       body: {
@@ -933,13 +1006,18 @@ describePg('prototype API with real PostgreSQL and limited runtime role', () => 
     recordingId: string,
     analysisArtifactId: string,
     bearer = token,
-    transcriptArtifactId?: string
+    transcriptArtifactId?: string,
+    replaceRecordingDocuments = false
   ) {
     return app.inject({
       method: 'POST',
       url: `/v1/recordings/${recordingId}/publish`,
       headers: authHeader(bearer),
-      payload: { analysisArtifactId, ...(transcriptArtifactId ? { transcriptArtifactId } : {}) }
+      payload: {
+        analysisArtifactId,
+        ...(transcriptArtifactId ? { transcriptArtifactId } : {}),
+        ...(replaceRecordingDocuments ? { replaceRecordingDocuments: true } : {})
+      }
     })
   }
 

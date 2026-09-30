@@ -94,6 +94,7 @@ export type UploadReceiptResponse = {
 export type PublishRequest = {
   analysisArtifactId: Uuid
   transcriptArtifactId?: Uuid
+  replaceRecordingDocuments?: boolean
 }
 
 export type AiDecisionItem = {

@@ -85,7 +85,8 @@ export const publishRequestSchema = {
   required: ['analysisArtifactId'],
   properties: {
     analysisArtifactId: uuid,
-    transcriptArtifactId: uuid
+    transcriptArtifactId: uuid,
+    replaceRecordingDocuments: { type: 'boolean' }
   },
   ...noExtra
 } as const
