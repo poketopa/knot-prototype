@@ -2,6 +2,7 @@
   display: flex;
   flex: 1;
   min-height: 0;
+  min-width: 0;
   background: var(--color-bg);
 }
 .sidebarSlot {
@@ -25,20 +26,25 @@
 }
 
 .page {
-  width: min(880px, calc(100% - 80px));
+  flex: 1;
+  min-width: 0;
+  max-width: 960px;
+  padding: 0 40px;
   margin: 56px auto 100px;
+  font-family: Pretendard, sans-serif;
 }
 .heading {
   margin-bottom: 34px;
 }
 .heading h1 {
   margin: 0;
-  font-size: var(--font-title);
-  font-weight: 700;
-  letter-spacing: -0.5px;
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: -0.02em;
 }
 .heading p {
-  margin: 8px 0 0;
+  margin: 6px 0 0;
   color: var(--color-text-muted);
   font-size: var(--font-md);
 }
@@ -82,14 +88,14 @@
 .groupHeader h2 {
   margin: 0;
   color: #8d8982;
-  font-size: 18px;
-  font-weight: 700;
+  font-size: 16px;
+  font-weight: 600;
   letter-spacing: -0.2px;
 }
 .groupHeader span {
   color: #9b968e;
-  font-size: 18px;
-  font-weight: 700;
+  font-size: 16px;
+  font-weight: 600;
 }
 .groupCard {
   display: grid;
@@ -103,9 +109,9 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 18px;
-  min-height: 96px;
-  padding: 22px 26px;
+  gap: 16px;
+  min-height: 92px;
+  padding: 20px 24px;
   color: #262624;
   text-decoration: none;
   border-top: 1px solid #efede8;
@@ -114,16 +120,19 @@
   border-top: 0;
 }
 .rowTitle {
-  margin: 0 0 8px;
-  color: #262624;
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: -0.25px;
+  display: block;
+  margin: 0 0 4px;
+  color: #1f1e1c;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
 }
 .rowOverview {
   margin: 0;
-  color: #5f5c56;
-  font-size: 15px;
+  color: #3c3b39;
+  font-size: 16px;
   line-height: 1.5;
   display: -webkit-box;
   -webkit-line-clamp: 1;
@@ -156,15 +165,19 @@
   color: var(--color-danger);
 }
 @media (max-width: 800px) {
-  .layout {
-    flex-direction: column;
-  }
-  .sidebarOpen .sidebarSlot,
-  .sidebarSlot {
-    width: 100%;
-    flex-basis: auto;
-  }
   .page {
-    width: calc(100% - 40px);
+    padding-inline: 24px;
+  }
+  .documentRow {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .rowMeta {
+    grid-column: 1;
+    grid-row: 2;
+    text-align: left;
+  }
+  .rowArrow {
+    grid-column: 2;
+    grid-row: 1 / 3;
   }
 }

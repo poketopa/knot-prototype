@@ -2,20 +2,25 @@
   display: flex;
   flex: 1;
   width: 100%;
+  min-width: 0;
   min-height: 0;
-  overflow: hidden;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  align-items: flex-start;
+  gap: 32px;
+  padding: 28px 40px 40px;
+  container: document-detail / inline-size;
+  overflow-y: auto;
   color: var(--color-text, #262624);
   background: #faf9f7;
 }
 
 .document {
-  width: 720px;
-  max-width: 100%;
+  flex: 1 1 320px;
+  max-width: 720px;
   min-width: 0;
-  margin: 100px 0 80px 40px;
+  margin: 72px auto 40px;
   padding: 0;
-  flex-shrink: 1;
-  overflow-y: auto;
   overflow-wrap: anywhere;
 }
 
@@ -180,36 +185,34 @@
 }
 
 .transcript {
-  width: 400px;
-  height: 100%;
-  padding: 28px 28px 28px 0;
-  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  flex: 0 0 340px;
+  min-width: 0;
+  height: calc(100vh - 148px);
+  padding: 0;
 }
 
 .error {
   color: #b4232a;
 }
 
-@media (max-width: 1080px) {
-  .withTranscript .transcript {
-    position: fixed;
-    top: 108px;
-    right: 24px;
-    bottom: 24px;
-    z-index: 10;
-    height: auto;
-    max-width: calc(100vw - 48px);
-    box-shadow: 0 6px 60px rgb(48 40 24 / 18%);
+/* The remaining workspace width, including an open navigation tree, controls wrapping. */
+@container document-detail (max-width: 772px) {
+  .document {
+    flex-basis: 100%;
+    margin-top: 24px;
+    margin-bottom: 0;
+  }
+  .transcript {
+    position: static;
+    flex: 1 1 100%;
+    height: min(560px, calc(100vh - 148px));
   }
 }
 
-@media (max-width: 750px) {
+@media (max-width: 800px) {
   .layout {
-    flex-direction: column;
-  }
-  .document {
-    width: 100%;
-    margin: 24px 0 56px;
-    padding: 0 24px;
+    padding-inline: 24px;
   }
 }

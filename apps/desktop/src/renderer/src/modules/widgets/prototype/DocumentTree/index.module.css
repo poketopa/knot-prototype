@@ -143,14 +143,3 @@
 .item[aria-current='page'] {
   background: #ebe9e4;
 }
-
-@media (max-width: 860px) {
-  .sidebar {
-    position: static;
-    width: calc(100% - 48px);
-    height: auto;
-    max-height: 240px;
-    margin: 24px;
-    border-radius: 18px;
-  }
-}
