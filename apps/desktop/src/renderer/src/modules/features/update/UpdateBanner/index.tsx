@@ -11,6 +11,7 @@ export default function UpdateBanner() {
 
   const renderAction = () => {
     if (stage === 'downloading') return <Button disabled>내려받는 중</Button>
+    if (stage === 'installing') return <Button disabled>다시 시작하는 중</Button>
     if (stage === 'downloaded') return <Button onClick={install}>다시 시작해 설치</Button>
 
     return <Button onClick={download}>{stage === 'error' ? '다시 시도' : '받기'}</Button>
@@ -21,6 +22,7 @@ export default function UpdateBanner() {
       <span className={styles.text}>
         새 버전 {version}이 있습니다.
         {stage === 'downloaded' && ' 내려받기가 끝났습니다.'}
+        {stage === 'installing' && ' 앱을 다시 시작하는 중입니다.'}
         {stage === 'error' && error && <span className={styles.error}> {error}</span>}
       </span>
       {renderAction()}

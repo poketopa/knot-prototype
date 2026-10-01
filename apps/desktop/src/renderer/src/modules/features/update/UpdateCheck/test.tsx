@@ -50,6 +50,11 @@ describe('UpdateCheck', () => {
 
     await user.click(screen.getByRole('button', { name: '다시 시작해 설치' }))
     expect(installUpdateApi).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('button', { name: '다시 시작해 설치' })).toBeNull()
+    expect(
+      screen.getByRole<HTMLButtonElement>('button', { name: '다시 시작하는 중' }).disabled
+    ).toBe(true)
+    expect(screen.getByText('앱을 다시 시작하는 중입니다')).toBeTruthy()
   })
 
   it('확인에 실패하면 안내를 보여주고 다시 확인할 수 있다', async () => {

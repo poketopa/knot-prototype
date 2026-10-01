@@ -14,6 +14,7 @@ export default function UpdateCheck() {
     if (stage === 'checking') return '새 버전을 확인하는 중입니다'
     if (stage === 'latest') return `최신 버전(${currentVersion})을 쓰고 있습니다`
     if (stage === 'downloaded') return `새 버전 ${version}을 내려받았습니다`
+    if (stage === 'installing') return '앱을 다시 시작하는 중입니다'
     if (version) return `새 버전 ${version}이 있습니다`
     if (stage === 'error') return null
 
@@ -23,6 +24,7 @@ export default function UpdateCheck() {
   const renderAction = () => {
     if (stage === 'checking') return <Button disabled>확인 중</Button>
     if (stage === 'downloading') return <Button disabled>내려받는 중</Button>
+    if (stage === 'installing') return <Button disabled>다시 시작하는 중</Button>
     if (stage === 'downloaded') return <Button onClick={install}>다시 시작해 설치</Button>
     if (version) {
       return <Button onClick={download}>{stage === 'error' ? '다시 시도' : '받기'}</Button>

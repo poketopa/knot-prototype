@@ -7,7 +7,14 @@ import { checkUpdateApi, downloadUpdateApi, installUpdateApi } from '@renderer/s
  * 배너는 새 버전(`version`)이 없으면 아무것도 그리지 않는다
  */
 export type UpdateStage =
-  'idle' | 'checking' | 'latest' | 'available' | 'downloading' | 'downloaded' | 'error'
+  | 'idle'
+  | 'checking'
+  | 'latest'
+  | 'available'
+  | 'downloading'
+  | 'downloaded'
+  | 'installing'
+  | 'error'
 
 const CHECK_ERROR_MESSAGE = '업데이트를 확인하지 못했습니다'
 const DOWNLOAD_ERROR_MESSAGE = '새 버전을 내려받지 못했습니다'
@@ -57,8 +64,11 @@ const useUpdate = () => {
     }
   }
 
-  /** 성공하면 앱이 종료되므로 이후 상태는 없다 */
+  /** 성공하면 앱이 종료된다. 종료가 늦어져도 설치 버튼은 다시 누를 수 없게 둔다 */
   const install = async () => {
+    setStage('installing')
+    setError(null)
+
     try {
       await installUpdateApi()
     } catch (caught) {
