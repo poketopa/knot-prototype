@@ -53,6 +53,17 @@
   font-size: 13px;
 }
 
+.meta > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta .copy {
+  margin-left: auto;
+}
+
 .meta strong {
   display: inline-flex;
   align-items: center;

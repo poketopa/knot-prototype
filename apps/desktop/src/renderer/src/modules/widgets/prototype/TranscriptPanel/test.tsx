@@ -10,7 +10,12 @@ vi.mock('@renderer/shared/api/prototype', () => ({
   trackApi: vi.fn().mockResolvedValue(undefined)
 }))
 
+vi.mock('@renderer/shared/api/clipboard', () => ({
+  writeClipboardTextApi: vi.fn().mockResolvedValue(undefined)
+}))
+
 import { getTranscriptApi, trackApi } from '@renderer/shared/api/prototype'
+import { writeClipboardTextApi } from '@renderer/shared/api/clipboard'
 
 const transcript = (recordingId: string, text: string): PrototypeTranscript => ({
   recordingId,
@@ -109,5 +114,51 @@ describe('TranscriptPanel', () => {
 
     expect(await screen.findByText('2분 5초')).toBeTruthy()
     expect(screen.getByLabelText('전사 원문')).toBeTruthy()
+  })
+
+  it('날짜·녹음 시간 줄의 복사 버튼으로 시각과 참여자를 포함한 원문을 복사한다', async () => {
+    vi.mocked(getTranscriptApi).mockResolvedValue({
+      ...transcript('r1', '첫 발화입니다. '),
+      durationSec: 95,
+      utterances: [
+        ...transcript('r1', '첫 발화입니다. ').utterances,
+        {
+          id: 'r1-u2',
+          meetingId: 'r1',
+          ord: 1,
+          startSec: 75,
+          endSec: 80,
+          speakerLabel: 's1',
+          text: '두 번째 발화입니다.'
+        }
+      ]
+    })
+
+    render(<TranscriptPanel recordingId="r1" />)
+
+    const duration = await screen.findByText('1분 35초')
+    const copyButton = screen.getByRole('button', { name: '복사' })
+    expect(copyButton.parentElement).toBe(duration.parentElement)
+
+    await userEvent.click(copyButton)
+
+    expect(writeClipboardTextApi).toHaveBeenCalledWith({
+      text: [
+        '2026년 9월 20일 녹음 · 1분 35초',
+        '',
+        '[00:15] 참여자 1: 첫 발화입니다.',
+        '[01:15] 참여자 2: 두 번째 발화입니다.'
+      ].join('\n')
+    })
+    expect(trackApi).toHaveBeenCalledWith({ eventType: 'copied', recordingId: 'r1' })
+  })
+
+  it('발화가 없으면 복사 버튼을 표시하지 않는다', async () => {
+    vi.mocked(getTranscriptApi).mockResolvedValue({ ...transcript('r1', ''), utterances: [] })
+
+    render(<TranscriptPanel recordingId="r1" />)
+
+    expect(await screen.findByText('기록된 발화가 없습니다.')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '복사' })).toBeNull()
   })
 })

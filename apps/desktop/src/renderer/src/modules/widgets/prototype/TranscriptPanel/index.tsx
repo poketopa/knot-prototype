@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PrototypeTranscript } from '@shared/prototype'
 import { getTranscriptApi, trackApi } from '@renderer/shared/api/prototype'
 import { formatClock } from '@renderer/shared/utils/formatClock'
+import CopyButton from '@renderer/modules/widgets/prototype/CopyButton'
 import styles from './index.module.css'
 
 interface TranscriptPanelProps {
@@ -46,6 +47,19 @@ const formatDuration = (durationSec: number) => {
   const minutes = Math.floor(totalSeconds / 60)
   const seconds = totalSeconds % 60
   return seconds === 0 ? `${minutes}분` : `${minutes}분 ${seconds}초`
+}
+
+/** 화면과 같은 순서로 날짜·녹음 시간 한 줄과 [시각] 참여자 N: 발화를 옮긴다. */
+const transcriptToText = (transcript: PrototypeTranscript) => {
+  const labels = [...new Set(transcript.utterances.map((item) => item.speakerLabel))]
+  const durationSec = getDurationSec(transcript)
+  const header = [`${formatDate(transcript.startedAt)} 녹음`]
+  if (durationSec !== null) header.push(formatDuration(durationSec))
+  const lines = transcript.utterances.map(
+    (item) =>
+      `[${formatClock({ sec: item.startSec })}] 참여자 ${labels.indexOf(item.speakerLabel) + 1}: ${item.text.trim()}`
+  )
+  return [header.join(' · '), '', ...lines].join('\n')
 }
 
 const sourceKeyOf = (recordingId: string, artifactId?: string) =>
@@ -162,6 +176,15 @@ export default function TranscriptPanel({
           <div className={styles.meta}>
             <span>{formatDate(currentTranscript.startedAt)} 녹음</span>
             {durationSec !== null && <strong>{formatDuration(durationSec)}</strong>}
+            {currentTranscript.utterances.length > 0 && (
+              <CopyButton
+                className={styles.copy}
+                getText={() => transcriptToText(currentTranscript)}
+                onCopied={() => {
+                  void trackApi({ eventType: 'copied', recordingId }).catch(() => {})
+                }}
+              />
+            )}
           </div>
           <div className={styles.utterances}>
             {currentTranscript.utterances.length === 0 && (
