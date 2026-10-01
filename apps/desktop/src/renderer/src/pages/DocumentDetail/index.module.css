@@ -91,8 +91,17 @@
   height: 18px;
 }
 
-.document h1 {
+.titleRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
   margin: 0 0 10px;
+}
+
+.document h1 {
+  min-width: 0;
+  margin: 0;
   color: var(--color-text, #262624);
   font-size: 28px;
   font-weight: 700;

@@ -1,0 +1,30 @@
+/* Figma '문서/원문 열림' Button/CTA/S · 복사하기 */
+.button {
+  -webkit-app-region: no-drag;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--color-border, #e9e6e1);
+  border-radius: 12px;
+  color: #3c3b39;
+  background: #fff;
+  font-family: Pretendard, var(--font-sans), sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: 0;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.button:hover {
+  background: var(--color-bg, #faf9f7);
+}
+
+.button[data-status='failed'] {
+  color: var(--color-danger, #c2410c);
+}

@@ -8,6 +8,7 @@ import {
   trackApi
 } from '@renderer/shared/api/prototype'
 import TranscriptPanel from '@renderer/modules/widgets/prototype/TranscriptPanel'
+import CopyButton from '@renderer/modules/widgets/prototype/CopyButton'
 import DocumentTree, {
   type DocumentTreeItem
 } from '@renderer/modules/widgets/prototype/DocumentTree'
@@ -127,6 +128,29 @@ const documentFlowSections = (document: PrototypeDocumentDetailV2): DocumentFlow
   }
 
   return [...sections.values()]
+}
+
+/** 노션·슬랙에 붙여넣어도 구조가 남도록 화면의 제목·메타·섹션을 마크다운으로 옮긴다. */
+const documentToMarkdown = ({
+  title,
+  startedAt,
+  duration,
+  sections
+}: {
+  title: string
+  startedAt?: string
+  duration: string | null
+  sections: DocumentFlowSection[]
+}) => {
+  const meta = [formatDate(startedAt), duration].filter(Boolean).join(' · ')
+  const blocks = [`# ${title}`, meta]
+  for (const section of sections) {
+    const lines = [`## ${section.heading}`]
+    if (section.paragraphs.length) lines.push(section.paragraphs.join(' '))
+    if (section.items.length) lines.push(section.items.map((item) => `- ${item}`).join('\n'))
+    blocks.push(lines.join('\n\n'))
+  }
+  return blocks.join('\n\n')
 }
 
 const recordingIdFor = (document: PrototypeDocumentDetailV2) =>
@@ -252,7 +276,26 @@ function DocumentContent({ documentId, embedded }: { documentId: string; embedde
               <span aria-hidden="true">&gt;</span>
               <span>{document.title}</span>
             </nav>
-            <h1>{document.title}</h1>
+            <div className={styles.titleRow}>
+              <h1>{document.title}</h1>
+              <CopyButton
+                getText={() =>
+                  documentToMarkdown({
+                    title: document.title,
+                    startedAt,
+                    duration,
+                    sections: flowSections
+                  })
+                }
+                onCopied={() => {
+                  void trackApi({
+                    eventType: 'copied',
+                    documentId,
+                    version: document.version
+                  }).catch(() => {})
+                }}
+              />
+            </div>
             <p className={styles.meta}>
               <time dateTime={startedAt}>{formatDate(startedAt)}</time>
               {duration && <span>{duration}</span>}

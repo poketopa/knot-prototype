@@ -11,6 +11,10 @@ vi.mock('@renderer/shared/api/prototype', () => ({
   trackApi: vi.fn().mockResolvedValue(undefined),
   onPrototypeChanged: vi.fn(() => () => {})
 }))
+vi.mock('@renderer/shared/api/clipboard', () => ({
+  writeClipboardTextApi: vi.fn().mockResolvedValue(undefined)
+}))
+import { writeClipboardTextApi } from '@renderer/shared/api/clipboard'
 import {
   getDocumentApi,
   getDocumentsApi,
@@ -110,6 +114,31 @@ describe('주제별 문서', () => {
     expect(transcriptToggle.getAttribute('title')).toBe('원문 보기')
     expect(transcriptToggle.getAttribute('aria-expanded')).toBe('false')
     expect(screen.queryByRole('textbox')).toBeNull()
+  })
+  it('제목 줄의 복사 버튼으로 문서를 마크다운으로 복사하고 기록한다', async () => {
+    vi.mocked(getDocumentApi).mockResolvedValue(document)
+    vi.mocked(getDocumentsApi).mockResolvedValue(catalog)
+    localStorage.setItem('knot-transcript-open', 'no')
+    mount()
+    const heading = await screen.findByRole('heading', { level: 1, name: '회원 탈퇴 정책' })
+    const copyButton = screen.getByRole('button', { name: '복사' })
+    expect(copyButton.parentElement).toBe(heading.parentElement)
+
+    await userEvent.click(copyButton)
+
+    expect(writeClipboardTextApi).toHaveBeenCalledWith({
+      text: [
+        '# 회원 탈퇴 정책',
+        '2026년 9월 21일 · 5분 5초',
+        '## 보관 정책\n\n댓글과 첨부파일 보관 정책을 정했다. 댓글과 첨부파일은 탈퇴 뒤에도 보관한다.'
+      ].join('\n\n')
+    })
+    expect(await screen.findByRole('button', { name: '복사됨' })).toBeTruthy()
+    expect(trackApi).toHaveBeenCalledWith({
+      eventType: 'copied',
+      documentId: 'topic-a',
+      version: 2
+    })
   })
   it('선택한 회의의 전사 전체를 읽기 전용으로 표시한다', async () => {
     vi.mocked(getDocumentApi).mockResolvedValue(document)
