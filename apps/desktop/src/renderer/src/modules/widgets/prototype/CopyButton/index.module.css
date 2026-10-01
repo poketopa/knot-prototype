@@ -1,19 +1,19 @@
-/* Figma '문서/원문 열림' Button/CTA/S · 복사하기 */
+/* Figma '문서/원문 열림' Button/CTA/S · 복사하기를 바탕으로 크기만 한 단계 줄였다. */
 .button {
   -webkit-app-region: no-drag;
   flex: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  height: 40px;
-  padding: 0 16px;
+  gap: 4px;
+  height: 32px;
+  padding: 0 12px;
   border: 1px solid var(--color-border, #e9e6e1);
-  border-radius: 12px;
+  border-radius: 10px;
   color: #3c3b39;
   background: #fff;
   font-family: Pretendard, var(--font-sans), sans-serif;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
   line-height: 1.5;
   letter-spacing: 0;

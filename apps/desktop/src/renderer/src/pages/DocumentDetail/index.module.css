@@ -99,6 +99,11 @@
   margin: 0 0 10px;
 }
 
+/* 제목 첫 줄(약 37px)의 세로 가운데에 버튼을 맞춘다 */
+.titleRow > button {
+  margin-top: 3px;
+}
+
 .document h1 {
   min-width: 0;
   margin: 0;
