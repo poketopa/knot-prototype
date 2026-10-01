@@ -95,6 +95,10 @@ import {
 import { readPrototypeTranscript } from '../prototype/artifacts'
 import { completeSetup, getSetupStatus } from '../prototype/setup'
 import { reanalyzePrototypeDocuments } from '../prototype/reanalyzeDocuments'
+import {
+  getDocumentClassificationState,
+  startDocumentClassification
+} from '../prototype/classifyDocuments'
 
 const FULL_PERCENT = 100
 
@@ -408,6 +412,8 @@ export const registerIpcHandlers = () => {
     IPC.prototype.reanalyzeDocuments,
     (): Promise<ReanalyzePrototypeDocumentsResponse> => reanalyzePrototypeDocuments()
   )
+  ipcMain.handle(IPC.prototype.classificationState, () => getDocumentClassificationState())
+  ipcMain.handle(IPC.prototype.classifyDocuments, () => startDocumentClassification())
 
   ipcMain.handle(IPC.prototype.listSummaries, (): ListPrototypeSummariesResponse =>
     listMeetingSummaries()

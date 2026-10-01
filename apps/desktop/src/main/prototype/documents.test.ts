@@ -281,3 +281,23 @@ it('원격 목록의 사용자별 도메인을 고정 키워드로 덮어쓰지 
     { id: 'document-dev', domain: '제품 개발' }
   ])
 })
+
+it('재분류 후 오프라인에서도 제목·본문·원문과 새 도메인을 보존한다', async () => {
+  state.request.mockResolvedValueOnce(document)
+  const before = await getPrototypeDocument({ documentId: document.id })
+  state.request.mockResolvedValueOnce({ documents: [{ ...document, domain: '사용자 경험' }] })
+  await listPrototypeDocuments()
+  state.request.mockRejectedValue(new Error('offline'))
+  const after = await getPrototypeDocument({ documentId: document.id })
+  expect(after).toEqual({ ...before, domain: '사용자 경험', offline: true })
+  expect(await listPrototypeDocuments()).toMatchObject([
+    { domain: '사용자 경험', durationSec: 305 }
+  ])
+})
+
+it('본문을 받지 않은 문서 목록도 오프라인에서 회의 길이를 보존한다', async () => {
+  state.request.mockResolvedValueOnce({ documents: [document] })
+  await listPrototypeDocuments()
+  state.request.mockRejectedValue(new Error('offline'))
+  expect(await listPrototypeDocuments()).toMatchObject([{ id: document.id, durationSec: 305 }])
+})

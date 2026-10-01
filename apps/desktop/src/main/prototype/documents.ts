@@ -34,6 +34,7 @@ interface TreeRow {
   latest_version: number
   overview: string | null
   detail_json: string | null
+  duration_sec: number | null
   updated_at: string
 }
 
@@ -136,21 +137,35 @@ const toDetail = (document: RemoteDetail): PrototypeDocumentDetail => ({
 })
 
 const cacheItem = (ownerId: string, item: TreeItem, detail?: PrototypeDocumentDetail) => {
+  if (!detail) {
+    const cached = getDb()
+      .prepare(
+        'SELECT detail_json,latest_version FROM prototype_document_tree WHERE owner_id=? AND id=?'
+      )
+      .get(ownerId, item.id) as { detail_json: string | null; latest_version: number } | undefined
+    if (cached?.detail_json && cached.latest_version === item.latestVersion) {
+      const saved = JSON.parse(cached.detail_json) as PrototypeDocumentDetail
+      // Classification changes only domain; keep the exact cached title/body/source data.
+      detail = { ...saved, domain: item.domain, durationSec: item.durationSec ?? saved.durationSec }
+    }
+  }
   getDb()
     .prepare(
       `INSERT INTO prototype_document_tree
-    (id,owner_id,title,domain,recording_id,recording_started_at,latest_version,overview,detail_json,updated_at)
-    VALUES (@id,@ownerId,@title,@domain,@recordingId,@recordingStartedAt,@latestVersion,@overview,@detailJson,@updatedAt)
+    (id,owner_id,title,domain,recording_id,recording_started_at,latest_version,overview,detail_json,updated_at,duration_sec)
+    VALUES (@id,@ownerId,@title,@domain,@recordingId,@recordingStartedAt,@latestVersion,@overview,@detailJson,@updatedAt,@durationSec)
     ON CONFLICT(owner_id,id) DO UPDATE SET
       title=excluded.title, domain=excluded.domain, recording_id=excluded.recording_id,
       recording_started_at=excluded.recording_started_at, overview=excluded.overview,
       latest_version=CASE WHEN excluded.detail_json IS NOT NULL OR prototype_document_tree.detail_json IS NULL
         THEN excluded.latest_version ELSE prototype_document_tree.latest_version END,
-      detail_json=COALESCE(excluded.detail_json,prototype_document_tree.detail_json), updated_at=excluded.updated_at`
+      detail_json=COALESCE(excluded.detail_json,prototype_document_tree.detail_json), updated_at=excluded.updated_at,
+      duration_sec=COALESCE(excluded.duration_sec,prototype_document_tree.duration_sec)`
     )
     .run({
       ...item,
       ownerId,
+      durationSec: item.durationSec ?? detail?.durationSec ?? null,
       overview: item.overview ?? null,
       detailJson: detail ? JSON.stringify(detail) : null
     })
@@ -168,6 +183,7 @@ const rowToItem = (row: TreeRow): TreeItem => ({
   recordingStartedAt: row.recording_started_at,
   latestVersion: row.latest_version,
   updatedAt: row.updated_at,
+  durationSec: row.duration_sec ?? undefined,
   ...(row.overview ? { overview: row.overview } : {})
 })
 const projectTreeItem = (item: TreeItem): TreeItem => ({

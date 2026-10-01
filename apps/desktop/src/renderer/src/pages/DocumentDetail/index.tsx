@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useParams } from 'react-router'
+import { Link, useParams } from 'react-router'
 import type { PrototypeDocumentDetail, PrototypeDocumentListItem } from '@shared/prototype'
 import {
   getDocumentApi,
@@ -11,6 +11,7 @@ import TranscriptPanel from '@renderer/modules/widgets/prototype/TranscriptPanel
 import DocumentTree, {
   type DocumentTreeItem
 } from '@renderer/modules/widgets/prototype/DocumentTree'
+import { PATHS } from '@renderer/shared/routes/paths'
 import styles from './index.module.css'
 
 type DocumentSummarySection = {
@@ -246,6 +247,11 @@ function DocumentContent({ documentId, embedded }: { documentId: string; embedde
           <p role="status">문서를 불러오고 있어요.</p>
         ) : (
           <>
+            <nav className={styles.breadcrumb} aria-label="문서 경로">
+              <Link to={PATHS.home}>문서</Link>
+              <span aria-hidden="true">&gt;</span>
+              <span>{document.title}</span>
+            </nav>
             <h1>{document.title}</h1>
             <p className={styles.meta}>
               <time dateTime={startedAt}>{formatDate(startedAt)}</time>

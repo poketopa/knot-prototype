@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, matchPath, useLocation, useNavigate } from 'react-router'
 import UpdateBanner from '@renderer/modules/features/update/UpdateBanner'
+import DocumentWorkspace from '@renderer/pages/Documents/Workspace'
 import { onRecordingState } from '@renderer/shared/api/events'
 import {
   getAuthStateApi,
@@ -33,6 +34,7 @@ export function AppShellLayout() {
     !!matchPath(PATHS.meetingDetail, pathname)
   const [auth, setAuth] = useState<PrototypeAuthState | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [isDocumentSidebarOpen, setIsDocumentSidebarOpen] = useState(false)
   useEffect(() => {
     let isMounted = true
     const refresh = () =>
@@ -60,7 +62,14 @@ export function AppShellLayout() {
   return (
     <div className={styles.shell}>
       <header className={styles.header}>
-        <Link className={styles.brand} to={PATHS.home} aria-label="문서 목록" title="문서 목록">
+        <button
+          className={`${styles.brand} ${isDocumentSidebarOpen ? styles.brandOpen : ''}`}
+          type="button"
+          aria-label={isDocumentSidebarOpen ? '문서 사이드바 닫기' : '문서 사이드바 열기'}
+          aria-pressed={isDocumentSidebarOpen}
+          title={isDocumentSidebarOpen ? '문서 사이드바 닫기' : '문서 사이드바 열기'}
+          onClick={() => setIsDocumentSidebarOpen((value) => !value)}
+        >
           <svg
             width="18"
             height="18"
@@ -73,7 +82,7 @@ export function AppShellLayout() {
             <path d="M9 6h12M9 12h12M9 18h12" />
             <path d="M3 6h1M3 12h1M3 18h1" strokeWidth="2.5" strokeLinecap="round" />
           </svg>
-        </Link>
+        </button>
         <nav className={styles.nav} aria-label="주 메뉴">
           <Link to={PATHS.home} aria-current={isDocument ? 'page' : undefined}>
             문서
@@ -109,7 +118,9 @@ export function AppShellLayout() {
       )}
       <UpdateBanner />
       <main className={styles.main}>
-        <Outlet />
+        <DocumentWorkspace sidebarOpen={isDocumentSidebarOpen}>
+          <Outlet />
+        </DocumentWorkspace>
       </main>
     </div>
   )

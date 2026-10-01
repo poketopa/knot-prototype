@@ -5,6 +5,10 @@ export const loginApi = () => window.api.prototype.login()
 export const logoutApi = () => window.api.prototype.logout()
 export const getDocumentsApi = () => window.api.prototype.listDocuments()
 export const reanalyzeDocumentsApi = () => window.api.prototype.reanalyzeDocuments()
+export const getDocumentClassificationStateApi = () =>
+  window.api.prototype.getDocumentClassificationState()
+export const startDocumentClassificationApi = () =>
+  window.api.prototype.startDocumentClassification()
 export const getSummariesApi = () => window.api.prototype.listSummaries()
 export const regenerateSummaryApi = (meetingId: string) =>
   window.api.prototype.regenerateSummary({ meetingId })

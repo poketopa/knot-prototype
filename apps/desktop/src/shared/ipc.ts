@@ -14,6 +14,7 @@ import type {
 } from './types'
 import type {
   PrototypeAuthState,
+  DocumentClassificationState,
   PrototypeChangedEvent,
   PrototypeDocumentDetail,
   PrototypeDocumentListItem,
@@ -75,6 +76,8 @@ export const IPC = {
     logout: 'prototype:logout',
     listDocuments: 'prototype:documents:list',
     reanalyzeDocuments: 'prototype:documents:reanalyze',
+    classificationState: 'prototype:documents:classification-state',
+    classifyDocuments: 'prototype:documents:classify',
     listSummaries: 'prototype:summaries:list',
     regenerateSummary: 'prototype:summaries:regenerate',
     getDocument: 'prototype:documents:get',
@@ -372,6 +375,8 @@ export interface ReanalyzePrototypeDocumentsResponse {
   failed: number
   failures: Array<{ recordingId: string; title: string; error: string }>
 }
+
+export type DocumentClassificationStateResponse = DocumentClassificationState
 
 export interface GetPrototypeDocumentRequest {
   documentId: string

@@ -148,7 +148,9 @@ const MIGRATIONS = [
   );
   CREATE INDEX IF NOT EXISTS idx_document_tree_recording
     ON prototype_document_tree(owner_id, recording_id);
-  `
+  `,
+  // 5: 목록만 내려받은 문서도 오프라인에서 회의 길이를 표시한다.
+  `ALTER TABLE prototype_document_tree ADD COLUMN duration_sec REAL;`
 ]
 
 export const migrate = (db: Database) => {

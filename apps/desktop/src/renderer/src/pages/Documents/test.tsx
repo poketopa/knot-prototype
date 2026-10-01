@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { getDocumentApi, getDocumentsApi } from '@renderer/shared/api/prototype'
@@ -28,8 +28,20 @@ afterEach(() => {
   prototypeEvents.listener = null
 })
 
+const renderWorkspace = (initialEntries = ['/']) =>
+  render(
+    <MemoryRouter initialEntries={initialEntries}>
+      <Routes>
+        <Route element={<DocumentWorkspace sidebarOpen />}>
+          <Route index element={<Documents />} />
+          <Route path="/documents/:documentId" element={<DocumentDetail embedded />} />
+        </Route>
+      </Routes>
+    </MemoryRouter>
+  )
+
 describe('Documents', () => {
-  it('groups documents by reusable domain and links leaves to document detail', async () => {
+  it('renders grouped document cards sorted by latest recording time', async () => {
     vi.mocked(getDocumentsApi).mockResolvedValue([
       {
         id: 'doc-1',
@@ -37,7 +49,8 @@ describe('Documents', () => {
         domain: '계정',
         recordingId: 'meeting-1',
         recordingStartedAt: '2026-09-28T09:00:00Z',
-        overview: 'GitHub 로그인을 사용한다.',
+        durationSec: 65,
+        overview: 'GitHub 로그인을 사용한다. 세부 구현은 유지한다.',
         latestVersion: 3,
         updatedAt: '2026-09-28T10:00:00Z'
       },
@@ -45,28 +58,32 @@ describe('Documents', () => {
         id: 'doc-2',
         title: '결제',
         domain: '수익',
+        recordingStartedAt: '2026-09-29T10:00:00Z',
+        durationSec: 3600,
         latestVersion: 1,
         updatedAt: '2026-09-27T10:00:00Z'
       }
     ] as never)
-    render(
-      <MemoryRouter>
-        <Documents />
-      </MemoryRouter>
+    renderWorkspace()
+
+    expect(await screen.findByText('녹음하고 정리한 내용을 폴더별로 모아둬요.')).toBeTruthy()
+    const list = screen.getByRole('region', { name: '문서 목록' })
+    const headings = within(list)
+      .getAllByRole('heading', { level: 2 })
+      .map((node) => node.textContent)
+    expect(headings).toEqual(['수익', '계정'])
+    expect(within(list).getByRole('link', { name: /인증/ }).getAttribute('href')).toBe(
+      '/documents/doc-1'
     )
-    expect(await screen.findByText('계정')).toBeTruthy()
-    expect(screen.getByText('수익')).toBeTruthy()
-    expect(screen.getByRole('link', { name: /인증/ }).getAttribute('href')).toBe('/documents/doc-1')
-    expect(screen.getByText(/왼쪽에서 문서를 선택하세요/)).toBeTruthy()
+    expect(within(list).getByText('GitHub 로그인을 사용한다.')).toBeTruthy()
+    expect(within(list).queryByText(/세부 구현은 유지한다/)).toBeNull()
+    expect(within(list).getByText(/1분 5초/)).toBeTruthy()
+    expect(within(list).getByText(/1시간 0분 0초/)).toBeTruthy()
   })
 
   it('shows a meaningful empty state without a previous recording list', async () => {
     vi.mocked(getDocumentsApi).mockResolvedValue([])
-    render(
-      <MemoryRouter>
-        <Documents />
-      </MemoryRouter>
-    )
+    renderWorkspace()
     expect(await screen.findByText('아직 기록된 문서가 없습니다')).toBeTruthy()
     expect(screen.queryByText('녹음 이력')).toBeNull()
     expect(screen.getByRole('link', { name: '새 녹음 시작' }).getAttribute('href')).toBe('/record')
@@ -98,20 +115,11 @@ describe('Documents', () => {
       outline: [],
       contributions: []
     } as never)
-    render(
-      <MemoryRouter initialEntries={['/']}>
-        <Routes>
-          <Route element={<DocumentWorkspace />}>
-            <Route index element={<Documents />} />
-            <Route path="/documents/:documentId" element={<DocumentDetail embedded />} />
-          </Route>
-        </Routes>
-      </MemoryRouter>
-    )
+    renderWorkspace()
     const sidebar = await screen.findByLabelText('문서')
     sidebar.scrollTop = 180
 
-    await userEvent.click(screen.getByRole('link', { name: /회원 탈퇴 정책/ }))
+    await userEvent.click(within(sidebar).getByRole('link', { name: /회원 탈퇴 정책/ }))
 
     expect(await screen.findByText('탈퇴한 사용자의 글은 유지한다.')).toBeTruthy()
     expect(screen.getByLabelText('문서')).toBe(sidebar)
@@ -131,20 +139,42 @@ describe('Documents', () => {
         }
       ] as never)
       .mockReturnValueOnce(new Promise(() => {}) as never)
-    render(
-      <MemoryRouter initialEntries={['/']}>
-        <Routes>
-          <Route element={<DocumentWorkspace />}>
-            <Route index element={<Documents />} />
-          </Route>
-        </Routes>
-      </MemoryRouter>
-    )
-    expect(await screen.findByRole('link', { name: /이전 계정 문서/ })).toBeTruthy()
+    renderWorkspace()
+    const sidebar = await screen.findByLabelText('문서')
+    expect(within(sidebar).getByRole('link', { name: /이전 계정 문서/ })).toBeTruthy()
 
     prototypeEvents.listener?.({ reason: 'auth' })
 
-    await waitFor(() => expect(screen.queryByRole('link', { name: /이전 계정 문서/ })).toBeNull())
+    await waitFor(() =>
+      expect(within(sidebar).queryByRole('link', { name: /이전 계정 문서/ })).toBeNull()
+    )
     expect(getDocumentsApi).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps existing document rows and sidebar scroll while a document refresh is in flight', async () => {
+    vi.mocked(getDocumentsApi)
+      .mockResolvedValueOnce([
+        {
+          id: 'doc-1',
+          title: '문서 분류 정책',
+          domain: '문서',
+          overview: '큰 폴더 기준을 유지한다.',
+          latestVersion: 1,
+          updatedAt: '2026-09-30T10:00:00Z'
+        }
+      ] as never)
+      .mockReturnValueOnce(new Promise(() => {}) as never)
+    renderWorkspace()
+    const sidebar = await screen.findByLabelText('문서')
+    sidebar.scrollTop = 220
+    expect(screen.getByRole('region', { name: '문서 목록' })).toBeTruthy()
+
+    prototypeEvents.listener?.({ reason: 'documents' })
+
+    const list = screen.getByRole('region', { name: '문서 목록' })
+    expect(within(list).getByRole('link', { name: /문서 분류 정책/ })).toBeTruthy()
+    expect(screen.queryByText('문서를 불러오고 있어요.')).toBeNull()
+    expect(screen.getByLabelText('문서')).toBe(sidebar)
+    expect(sidebar.scrollTop).toBe(220)
   })
 })

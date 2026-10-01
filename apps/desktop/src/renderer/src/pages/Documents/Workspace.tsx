@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { Outlet, useParams } from 'react-router'
 import { getDocumentsApi, onPrototypeChanged } from '@renderer/shared/api/prototype'
 import DocumentTree, {
@@ -7,12 +7,19 @@ import DocumentTree, {
 import { DocumentWorkspaceContext } from './workspaceContext'
 import styles from './index.module.css'
 
-export default function DocumentWorkspace() {
+export default function DocumentWorkspace({
+  children,
+  sidebarOpen = true
+}: {
+  children?: ReactNode
+  sidebarOpen?: boolean
+}) {
   const { documentId } = useParams()
   const [documents, setDocuments] = useState<DocumentTreeItem[]>([])
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const requestId = useRef(0)
+  const hasCatalog = useRef(false)
 
   useEffect(() => {
     let isMounted = true
@@ -20,13 +27,15 @@ export default function DocumentWorkspace() {
       const currentRequest = requestId.current + 1
       requestId.current = currentRequest
       if (clear) {
+        hasCatalog.current = false
         setDocuments([])
         setError(null)
       }
-      setIsLoading(true)
+      if (clear || !hasCatalog.current) setIsLoading(true)
       try {
         const docs = await getDocumentsApi()
         if (isMounted && requestId.current === currentRequest) {
+          hasCatalog.current = true
           setDocuments(docs as DocumentTreeItem[])
           setError(null)
         }
@@ -56,9 +65,11 @@ export default function DocumentWorkspace() {
 
   return (
     <DocumentWorkspaceContext.Provider value={value}>
-      <div className={styles.layout}>
-        <DocumentTree documents={documents} activeDocumentId={documentId} />
-        <Outlet />
+      <div className={`${styles.layout} ${sidebarOpen ? styles.sidebarOpen : ''}`}>
+        <div className={styles.sidebarSlot} aria-hidden={!sidebarOpen} inert={!sidebarOpen}>
+          <DocumentTree documents={documents} activeDocumentId={documentId} />
+        </div>
+        {children ?? <Outlet />}
       </div>
     </DocumentWorkspaceContext.Provider>
   )

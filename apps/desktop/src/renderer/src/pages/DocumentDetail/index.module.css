@@ -26,6 +26,32 @@
   font-weight: 600;
 }
 
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 22px;
+  color: #8b8882;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.breadcrumb a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.breadcrumb a:hover {
+  color: #262624;
+}
+
+.breadcrumb span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .transcriptToggle {
   -webkit-app-region: no-drag;
   position: fixed;

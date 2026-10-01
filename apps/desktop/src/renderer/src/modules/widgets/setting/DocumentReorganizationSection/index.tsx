@@ -28,7 +28,7 @@ const statusMessage = (status: ReanalysisStatus) => {
   if (status.state === 'idle') return '아직 실행하지 않았습니다.'
   if (status.state === 'running') return '기존 문서를 다시 정리하는 중입니다.'
   if (status.state === 'completed')
-    return `기존 문서 다시 정리가 끝났습니다. ${resultLabel(status.result)}`
+    return `로컬 재정리가 끝났습니다. 서버 반영은 연결 상태에 따라 이어서 진행됩니다. ${resultLabel(status.result)}`
   return `기존 문서 다시 정리에 실패했습니다. ${status.error}`
 }
 
@@ -68,7 +68,8 @@ export default function DocumentReorganizationSection() {
       <div className={styles.body}>
         <p className={styles.hint}>
           현재 로그인한 사용자의 기존 문서를 지금 선택한 AI 정리 방식으로 다시 분석합니다. 실패해도
-          기존 문서는 보존되며, 다시 시도할 수 있습니다.
+          기존 문서는 보존되며, 다시 시도할 수 있습니다. 기존 AI 처리나 발행이 진행 중인 녹음은 이번
+          실행에서 제외됩니다.
         </p>
         <p className={styles.status} role={status.state === 'running' ? 'status' : undefined}>
           {statusMessage(status)}

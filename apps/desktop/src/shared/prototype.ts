@@ -35,6 +35,13 @@ export interface PrototypeDocumentListItem {
   domain?: string
   recordingId?: string
   recordingStartedAt?: string
+  durationSec?: number
+}
+
+export interface DocumentClassificationState {
+  status: 'idle' | 'running' | 'completed' | 'failed'
+  documentCount?: number
+  error?: string
 }
 
 export interface PrototypeSummarySection {

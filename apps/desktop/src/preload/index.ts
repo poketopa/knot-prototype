@@ -40,6 +40,7 @@ import {
   type ReadPrototypeTranscriptRequest,
   type ReadPrototypeTranscriptResponse,
   type ReanalyzePrototypeDocumentsResponse,
+  type DocumentClassificationStateResponse,
   type RegenerateMeetingSummaryRequest,
   type ReassignUtteranceRequest,
   type RecordingCommandEvent,
@@ -173,6 +174,10 @@ const api = {
       ipcRenderer.invoke(IPC.prototype.listDocuments),
     reanalyzeDocuments: (): Promise<ReanalyzePrototypeDocumentsResponse> =>
       ipcRenderer.invoke(IPC.prototype.reanalyzeDocuments),
+    getDocumentClassificationState: (): Promise<DocumentClassificationStateResponse> =>
+      ipcRenderer.invoke(IPC.prototype.classificationState),
+    startDocumentClassification: (): Promise<DocumentClassificationStateResponse> =>
+      ipcRenderer.invoke(IPC.prototype.classifyDocuments),
     listSummaries: (): Promise<ListPrototypeSummariesResponse> =>
       ipcRenderer.invoke(IPC.prototype.listSummaries),
     regenerateSummary: (payload: RegenerateMeetingSummaryRequest): Promise<void> =>

@@ -1,0 +1,44 @@
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) 0;
+  border-top: 1px solid var(--color-divider);
+}
+
+.hint,
+.status {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+  line-height: 1.6;
+}
+
+.status {
+  color: var(--color-text);
+}
+
+.notice {
+  margin: 0;
+  color: var(--color-success);
+  font-size: var(--font-sm);
+}
+
+.warning {
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--font-sm);
+}
+
+.error {
+  margin: 0;
+  color: var(--color-danger);
+  font-size: var(--font-sm);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}

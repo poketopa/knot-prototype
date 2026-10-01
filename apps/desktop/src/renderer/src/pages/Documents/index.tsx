@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
+import { prototypeBroadDocumentDomain } from '@shared/prototype'
 import { getDocumentsApi, onPrototypeChanged } from '@renderer/shared/api/prototype'
 import DocumentTree, {
   type DocumentTreeItem
@@ -10,6 +11,44 @@ import styles from './index.module.css'
 
 const formatDate = (value: string) =>
   new Date(value).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })
+
+const formatDuration = (durationSec?: number) => {
+  if (typeof durationSec !== 'number' || !Number.isFinite(durationSec) || durationSec <= 0)
+    return null
+  const totalSeconds = Math.round(durationSec)
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  if (hours > 0) return `${hours}시간 ${minutes}분 ${seconds}초`
+  if (minutes > 0) return seconds ? `${minutes}분 ${seconds}초` : `${minutes}분`
+  return `${seconds}초`
+}
+
+const timestampOf = (document: DocumentTreeItem) =>
+  new Date(document.recordingStartedAt ?? document.updatedAt).getTime()
+
+const firstSentence = (value?: string) => {
+  const normalized = value?.trim().replace(/\s+/g, ' ')
+  if (!normalized) return '회의에서 나온 핵심 내용을 문서로 정리했어요.'
+  const match = normalized.match(/^.+?[.!?。！？]|^.+?(?:요|다)(?:\s|$)/)
+  return (match?.[0] ?? normalized).trim()
+}
+
+const groupedDocuments = (documents: DocumentTreeItem[]) => {
+  const groups = documents.reduce<Map<string, DocumentTreeItem[]>>((map, document) => {
+    const domain = prototypeBroadDocumentDomain(document) || '미분류'
+    map.set(domain, [...(map.get(domain) ?? []), document])
+    return map
+  }, new Map())
+
+  return [...groups.entries()]
+    .map(([domain, items]) => ({
+      domain,
+      items: [...items].sort((a, b) => timestampOf(b) - timestampOf(a)),
+      latestAt: Math.max(...items.map(timestampOf))
+    }))
+    .sort((a, b) => b.latestAt - a.latestAt || a.domain.localeCompare(b.domain, 'ko-KR'))
+}
 
 export default function Documents() {
   const workspace = useDocumentWorkspace()
@@ -67,7 +106,7 @@ export function DocumentsContent({
       <div className={styles.heading}>
         <div>
           <h1>문서</h1>
-          <p>도메인을 펼쳐 기록된 문서를 읽습니다.</p>
+          <p>녹음하고 정리한 내용을 폴더별로 모아둬요.</p>
         </div>
       </div>
       {error && (
@@ -75,7 +114,7 @@ export function DocumentsContent({
           {error}
         </p>
       )}
-      {isLoading ? (
+      {isLoading && documents.length === 0 ? (
         <p role="status" className={styles.empty}>
           문서를 불러오고 있어요.
         </p>
@@ -90,9 +129,41 @@ export function DocumentsContent({
           <Link to={PATHS.record}>새 녹음 시작</Link>
         </section>
       ) : (
-        <section className={styles.selection}>
-          <h2>왼쪽에서 문서를 선택하세요</h2>
-          <p>가장 최근 문서는 {formatDate(documents[0].updatedAt)}에 업데이트됐습니다.</p>
+        <section className={styles.groups} aria-label="문서 목록">
+          {groupedDocuments(documents).map((group) => (
+            <article className={styles.groupBlock} key={group.domain}>
+              <header className={styles.groupHeader}>
+                <h2>{group.domain}</h2>
+                <span>{group.items.length}</span>
+              </header>
+              <div className={styles.groupCard}>
+                {group.items.map((document) => {
+                  const duration = formatDuration(document.durationSec)
+                  return (
+                    <Link
+                      className={styles.documentRow}
+                      key={document.id}
+                      to={`/documents/${document.id}`}
+                    >
+                      <span>
+                        <strong className={styles.rowTitle}>{document.title}</strong>
+                        <span className={styles.rowOverview}>
+                          {firstSentence(document.overview)}
+                        </span>
+                      </span>
+                      <span className={styles.rowMeta}>
+                        {formatDate(document.recordingStartedAt ?? document.updatedAt)}
+                        {duration && <span className={styles.durationBadge}>{duration}</span>}
+                      </span>
+                      <span className={styles.rowArrow} aria-hidden="true">
+                        ›
+                      </span>
+                    </Link>
+                  )
+                })}
+              </div>
+            </article>
+          ))}
         </section>
       )}
     </main>
