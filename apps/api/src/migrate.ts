@@ -79,6 +79,27 @@ export async function migrate(connectionString = loadConfig().migrationDatabaseU
         client.release()
       }
     }
+    const classificationMigration = await db.query(
+      'SELECT 1 FROM schema_migrations WHERE version = $1',
+      ['005_document_classification']
+    )
+    if (classificationMigration.rowCount === 0) {
+      const sql = await readFile(join(migrationsDir, '005_document_classification.sql'), 'utf8')
+      const client = await db.connect()
+      try {
+        await client.query('BEGIN')
+        await client.query(sql)
+        await client.query('INSERT INTO schema_migrations (version) VALUES ($1)', [
+          '005_document_classification'
+        ])
+        await client.query('COMMIT')
+      } catch (error) {
+        await client.query('ROLLBACK')
+        throw error
+      } finally {
+        client.release()
+      }
+    }
     await configureRuntimeRole(db)
   } finally {
     await db.end()
@@ -122,7 +143,10 @@ async function configureRuntimeRole(db: ReturnType<typeof createPool>) {
     `GRANT UPDATE (name, updated_at) ON document_domains TO ${quoteIdentifier(runtimeUser)}`
   )
   await db.query(
-    `GRANT UPDATE (latest_snapshot_id, latest_version, updated_at, is_active) ON document_tree_documents TO ${quoteIdentifier(runtimeUser)}`
+    `GRANT UPDATE (domain_id, latest_snapshot_id, latest_version, updated_at, is_active) ON document_tree_documents TO ${quoteIdentifier(runtimeUser)}`
+  )
+  await db.query(
+    `GRANT UPDATE (response, completed_at) ON document_classification_requests TO ${quoteIdentifier(runtimeUser)}`
   )
   await db.query(
     `GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ${quoteIdentifier(runtimeUser)}`

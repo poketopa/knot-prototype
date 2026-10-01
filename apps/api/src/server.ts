@@ -576,15 +576,146 @@ export function buildServer({
               d.recording_started_at,
               d.latest_version,
               d.updated_at,
+              r.duration_ms,
               dd.name AS domain
        FROM document_tree_documents d
        JOIN document_domains dd ON dd.user_id = d.user_id AND dd.id = d.domain_id
+       JOIN recordings r ON r.user_id = d.user_id AND r.id = d.recording_id
        WHERE d.user_id = $1 AND d.is_active = true
        ORDER BY dd.name ASC, d.recording_started_at DESC, d.title ASC`,
       [user.id]
     )
     return { documents: documents.rows.map(mapDocumentTreeItem) }
   })
+
+  app.get('/v1/document-classification', async (request) => {
+    const user = await authenticate(db, request)
+    await backfillLegacyDocumentTree(db, user.id)
+    const documents = await selectClassificationDocuments(db, user.id)
+    const revision = revisionForClassificationDocuments(documents)
+    return {
+      revision,
+      baseRevision: revision,
+      documents: documents.map(mapClassificationDocument)
+    }
+  })
+
+  app.post<{ Body: DocumentClassificationApplyRequest }>(
+    '/v1/document-classification',
+    { schema: { body: documentClassificationApplyRequestSchema } },
+    async (request) => {
+      const user = await authenticate(db, request)
+      await backfillLegacyDocumentTree(db, user.id)
+      const payloadHash = canonicalHash(request.body)
+      return withTransaction(db, async (client) => {
+        await lockUserDocumentTree(client, user.id)
+        const insertedRequest = await client.query(
+          `INSERT INTO document_classification_requests (user_id, request_id, payload_hash)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (user_id, request_id) DO NOTHING`,
+          [user.id, request.body.requestId, payloadHash]
+        )
+        if (insertedRequest.rowCount === 0) {
+          const existing = await client.query<{
+            payload_hash: string
+            response: unknown | null
+          }>(
+            `SELECT payload_hash, response
+             FROM document_classification_requests
+             WHERE user_id = $1 AND request_id = $2
+             FOR UPDATE`,
+            [user.id, request.body.requestId]
+          )
+          if (existing.rowCount !== 1) {
+            throw new ApiError(404, 'CLASSIFICATION_REQUEST_NOT_FOUND', 'Request not found')
+          }
+          assertSameHash(existing.rows[0].payload_hash, payloadHash)
+          if (existing.rows[0].response) {
+            return existing.rows[0].response
+          }
+          throw new ApiError(
+            409,
+            'CLASSIFICATION_REQUEST_IN_PROGRESS',
+            'Classification request is already in progress',
+            true
+          )
+        }
+
+        const documents = await selectClassificationDocuments(client, user.id, true)
+        const currentRevision = revisionForClassificationDocuments(documents)
+        if (currentRevision !== request.body.baseRevision) {
+          throw new ApiError(
+            409,
+            'DOCUMENT_CLASSIFICATION_REVISION_CONFLICT',
+            'Documents changed after classification input was loaded'
+          )
+        }
+
+        assertCompleteClassificationAssignments(documents, request.body.assignments)
+
+        const rowsById = new Map(documents.map((document) => [document.id, document]))
+        let changedCount = 0
+        for (const assignment of request.body.assignments) {
+          const document = rowsById.get(assignment.documentId)
+          if (!document) {
+            throw new ApiError(404, 'DOCUMENT_NOT_FOUND', 'Document not found')
+          }
+          const nextDomainId = await upsertDocumentDomain(client, user.id, assignment.domain)
+          if (nextDomainId === document.domain_id) {
+            continue
+          }
+          await client.query(
+            `UPDATE document_tree_documents
+             SET domain_id = $1,
+                 updated_at = now()
+             WHERE user_id = $2 AND id = $3`,
+            [nextDomainId, user.id, assignment.documentId]
+          )
+          await client.query(
+            `INSERT INTO document_classification_changes (
+               user_id,
+               request_id,
+               document_id,
+               from_domain_id,
+               to_domain_id,
+               from_domain_name,
+               to_domain_name,
+               base_revision
+             )
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+            [
+              user.id,
+              request.body.requestId,
+              assignment.documentId,
+              document.domain_id,
+              nextDomainId,
+              document.domain,
+              assignment.domain.trim(),
+              request.body.baseRevision
+            ]
+          )
+          changedCount += 1
+        }
+
+        const updatedDocuments = await selectClassificationDocuments(client, user.id)
+        const revision = revisionForClassificationDocuments(updatedDocuments)
+        const response = {
+          revision,
+          baseRevision: revision,
+          changedCount,
+          documents: updatedDocuments.map(mapClassificationDocument)
+        }
+        await client.query(
+          `UPDATE document_classification_requests
+           SET response = $1,
+               completed_at = now()
+           WHERE user_id = $2 AND request_id = $3`,
+          [JSON.stringify(response), user.id, request.body.requestId]
+        )
+        return response
+      })
+    }
+  )
 
   app.get<{ Params: { id: string } }>(
     '/v1/document-tree/:id',
@@ -750,6 +881,28 @@ function twoUuidParamSchema(first: string, second: string) {
   } as const
 }
 
+const documentClassificationApplyRequestSchema = {
+  type: 'object',
+  required: ['requestId', 'baseRevision', 'assignments'],
+  properties: {
+    requestId: { type: 'string', format: 'uuid' },
+    baseRevision: { type: 'string', minLength: 1, maxLength: 128 },
+    assignments: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['documentId', 'domain'],
+        properties: {
+          documentId: { type: 'string', format: 'uuid' },
+          domain: { type: 'string', minLength: 1, maxLength: 160 }
+        },
+        additionalProperties: false
+      }
+    }
+  },
+  additionalProperties: false
+} as const
+
 function assertGithubConfigured(config: AppConfig) {
   if (!config.githubClientId || !config.githubClientSecret) {
     throw new ApiError(503, 'AUTH_NOT_CONFIGURED', 'GitHub OAuth is not configured')
@@ -781,7 +934,7 @@ async function publishRecording(
   replaceRecordingDocuments = false
 ) {
   return withTransaction(db, async (client) => {
-    await client.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [user.id])
+    await lockUserDocumentTree(client, user.id)
     const replay = await client.query<{ response: unknown }>(
       'SELECT response FROM recording_publishes WHERE user_id = $1 AND recording_id = $2 AND analysis_artifact_id = $3',
       [user.id, recordingId, analysisArtifactId]
@@ -1256,6 +1409,96 @@ function verifyArtifactPayload(body: ArtifactPutRequest) {
   return body.content
 }
 
+async function lockUserDocumentTree(db: Pick<Db, 'query'>, userId: string) {
+  await db.query("SELECT pg_advisory_xact_lock(hashtextextended('document-tree:' || $1, 0))", [
+    userId
+  ])
+}
+
+async function selectClassificationDocuments(db: Pick<Db, 'query'>, userId: string, lock = false) {
+  return (
+    await db.query<ClassificationDocumentRow>(
+      `SELECT d.id,
+              d.title,
+              d.overview,
+              d.recording_id,
+              d.recording_started_at,
+              d.latest_version,
+              d.updated_at,
+              d.domain_id,
+              d.latest_snapshot_id,
+              r.duration_ms,
+              s.body,
+              dd.name AS domain
+       FROM document_tree_documents d
+       JOIN document_domains dd ON dd.user_id = d.user_id AND dd.id = d.domain_id
+       JOIN recordings r ON r.user_id = d.user_id AND r.id = d.recording_id
+       JOIN document_tree_snapshots s ON s.user_id = d.user_id AND s.id = d.latest_snapshot_id
+       WHERE d.user_id = $1 AND d.is_active = true
+       ORDER BY d.id ASC
+       ${lock ? 'FOR UPDATE OF d' : ''}`,
+      [userId]
+    )
+  ).rows
+}
+
+function revisionForClassificationDocuments(documents: ClassificationDocumentRow[]) {
+  return canonicalHash({
+    documents: documents.map((document) => ({
+      id: document.id,
+      domainId: document.domain_id,
+      domain: document.domain,
+      latestSnapshotId: document.latest_snapshot_id,
+      latestVersion: document.latest_version,
+      overview: document.overview,
+      updatedAt: document.updated_at.toISOString()
+    }))
+  })
+}
+
+function mapClassificationDocument(row: ClassificationDocumentRow) {
+  return {
+    id: row.id,
+    title: row.title,
+    domain: row.domain,
+    recordingId: row.recording_id,
+    recordingStartedAt: row.recording_started_at.toISOString(),
+    latestVersion: row.latest_version,
+    updatedAt: row.updated_at.toISOString(),
+    durationSec: Math.floor(row.duration_ms / 1000),
+    body: row.body,
+    ...(row.overview ? { overview: row.overview } : {})
+  }
+}
+
+function assertCompleteClassificationAssignments(
+  documents: ClassificationDocumentRow[],
+  assignments: DocumentClassificationAssignment[]
+) {
+  if (documents.length !== assignments.length) {
+    throw new ApiError(
+      422,
+      'DOCUMENT_CLASSIFICATION_ASSIGNMENTS_INCOMPLETE',
+      'Assignments must include every active document exactly once'
+    )
+  }
+  const expectedIds = new Set(documents.map((document) => document.id))
+  const actualIds = new Set<string>()
+  for (const assignment of assignments) {
+    if (actualIds.has(assignment.documentId)) {
+      throw new ApiError(
+        422,
+        'DOCUMENT_CLASSIFICATION_ASSIGNMENT_DUPLICATE',
+        'Document assignment is duplicated'
+      )
+    }
+    actualIds.add(assignment.documentId)
+    if (!expectedIds.has(assignment.documentId)) {
+      throw new ApiError(404, 'DOCUMENT_NOT_FOUND', 'Document not found')
+    }
+  }
+}
+
 async function assertEventReferences(
   db: Pick<Db, 'query'>,
   user: AuthenticatedUser,
@@ -1325,7 +1568,7 @@ async function backfillLegacyDocumentTree(db: Db, userId: string) {
   )
   for (const contribution of contributions.rows) {
     await withTransaction(db, async (client) => {
-      await client.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [userId])
+      await lockUserDocumentTree(client, userId)
       const domainId = await upsertDocumentDomain(client, userId, contribution.document_title)
       const documentId = legacyTreeDocumentId(contribution.document_id, contribution.recording_id)
       const body = legacySectionToV2Body(contribution.section)
@@ -1571,6 +1814,7 @@ function mapDocumentTreeItem(row: DocumentTreeItemRow) {
     recordingStartedAt: row.recording_started_at.toISOString(),
     latestVersion: row.latest_version,
     updatedAt: row.updated_at.toISOString(),
+    durationSec: Math.floor(row.duration_ms / 1000),
     ...(row.overview ? { overview: row.overview } : {})
   }
 }
@@ -1623,13 +1867,30 @@ type DocumentTreeItemRow = {
   recording_started_at: Date
   latest_version: number
   updated_at: Date
+  duration_ms: number
 }
 
 type DocumentTreeDetailRow = DocumentTreeItemRow & {
   transcript_artifact_id: string
-  duration_ms: number
   snapshot_id: string
   body: unknown
+}
+
+type ClassificationDocumentRow = DocumentTreeItemRow & {
+  domain_id: string
+  latest_snapshot_id: string
+  body: unknown
+}
+
+type DocumentClassificationAssignment = {
+  documentId: string
+  domain: string
+}
+
+type DocumentClassificationApplyRequest = {
+  requestId: string
+  baseRevision: string
+  assignments: DocumentClassificationAssignment[]
 }
 
 type LegacyContributionRow = {

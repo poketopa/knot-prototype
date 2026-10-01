@@ -3,6 +3,7 @@ import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
+import { setTimeout as delay } from 'node:timers/promises'
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
@@ -728,6 +729,159 @@ describePg('prototype API with real PostgreSQL and limited runtime role', () => 
         [userId, foreignReferenceDocumentId]
       )
     ).toBe(0)
+  })
+
+  it('reclassifies all active tree documents atomically without rewriting document bodies', async () => {
+    const r1 = '00000000-0000-4000-8000-000000004101'
+    const t1 = '00000000-0000-4000-8000-000000004201'
+    const a1 = '00000000-0000-4000-8000-000000004301'
+    const d1 = '00000000-0000-4000-8000-000000004401'
+    const d2 = '00000000-0000-4000-8000-000000004402'
+
+    await putRecording(r1, '2026-10-10T01:00:00.000Z')
+    await putJsonArtifact(r1, t1, 'transcript', transcript(['classify-u1', 'classify-u2']))
+    await putJsonArtifact(r1, a1, 'ai_analysis', {
+      schemaVersion: 2,
+      topics: [
+        v2Topic(d1, 'AI 시대에 테스트를 짜는 이유', 'AI 시대에 테스트를 짜는 이유', [
+          'classify-u1'
+        ]),
+        v2Topic(d2, '워크스페이스 생성 개수 제한', '워크스페이스 생성 개수 제한', ['classify-u2'])
+      ]
+    })
+    expect((await publish(r1, a1, token, t1)).statusCode).toBe(200)
+
+    const input = await app.inject({
+      method: 'GET',
+      url: '/v1/document-classification',
+      headers: authHeader()
+    })
+    expect(input.statusCode).toBe(200)
+    const inputBody = input.json()
+    expect(inputBody.revision).toBe(inputBody.baseRevision)
+    const firstDocument = inputBody.documents.find((document: { id: string }) => document.id === d1)
+    const secondDocument = inputBody.documents.find(
+      (document: { id: string }) => document.id === d2
+    )
+    expect(firstDocument).toMatchObject({
+      id: d1,
+      domain: 'AI 시대에 테스트를 짜는 이유',
+      title: 'AI 시대에 테스트를 짜는 이유',
+      latestVersion: 1,
+      durationSec: 1,
+      body: expect.objectContaining({ schemaVersion: 2 })
+    })
+    expect(secondDocument).toMatchObject({
+      id: d2,
+      domain: '워크스페이스 생성 개수 제한'
+    })
+
+    const requestId = '00000000-0000-4000-8000-000000004501'
+    const assignments = inputBody.documents.map((document: { id: string; domain: string }) => ({
+      documentId: document.id,
+      domain: document.id === d1 || document.id === d2 ? '개발 품질' : document.domain
+    }))
+    const lockClient = await runtimeDb.connect()
+    await lockClient.query('BEGIN')
+    await lockClient.query(
+      "SELECT pg_advisory_xact_lock(hashtextextended('document-tree:' || $1, 0))",
+      [userId]
+    )
+    const blockedApply = app.inject({
+      method: 'POST',
+      url: '/v1/document-classification',
+      headers: authHeader(),
+      payload: {
+        requestId,
+        baseRevision: inputBody.baseRevision,
+        assignments
+      }
+    })
+    const blockedState = await Promise.race([
+      blockedApply.then(() => 'completed'),
+      delay(100).then(() => 'waiting')
+    ])
+    try {
+      expect(blockedState).toBe('waiting')
+    } finally {
+      await lockClient.query('COMMIT')
+      lockClient.release()
+    }
+    const applied = await blockedApply
+    expect(applied.statusCode).toBe(200)
+    expect(applied.json()).toMatchObject({ revision: applied.json().baseRevision, changedCount: 2 })
+    const reapplied = await app.inject({
+      method: 'POST',
+      url: '/v1/document-classification',
+      headers: authHeader(),
+      payload: {
+        requestId,
+        baseRevision: inputBody.baseRevision,
+        assignments
+      }
+    })
+    expect(reapplied.statusCode).toBe(200)
+    expect(reapplied.json()).toEqual(applied.json())
+
+    const tree = await app.inject({
+      method: 'GET',
+      url: '/v1/document-tree',
+      headers: authHeader()
+    })
+    expect(tree.statusCode).toBe(200)
+    expect(tree.json().documents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: d1, domain: '개발 품질', durationSec: 1 }),
+        expect.objectContaining({ id: d2, domain: '개발 품질', durationSec: 1 })
+      ])
+    )
+    const detail = await app.inject({
+      method: 'GET',
+      url: `/v1/document-tree/${d1}`,
+      headers: authHeader()
+    })
+    expect(detail.statusCode).toBe(200)
+    expect(detail.json()).toMatchObject({
+      id: d1,
+      title: 'AI 시대에 테스트를 짜는 이유',
+      domain: '개발 품질',
+      body: firstDocument.body
+    })
+    expect(
+      await scalar(
+        'SELECT count(*)::int FROM document_classification_changes WHERE user_id = $1 AND request_id = $2',
+        [userId, requestId]
+      )
+    ).toBe(2)
+
+    const stale = await app.inject({
+      method: 'POST',
+      url: '/v1/document-classification',
+      headers: authHeader(),
+      payload: {
+        requestId: '00000000-0000-4000-8000-000000004502',
+        baseRevision: inputBody.baseRevision,
+        assignments
+      }
+    })
+    expect(stale.statusCode).toBe(409)
+    expect(stale.json()).toMatchObject({ code: 'DOCUMENT_CLASSIFICATION_REVISION_CONFLICT' })
+
+    const conflictingReplay = await app.inject({
+      method: 'POST',
+      url: '/v1/document-classification',
+      headers: authHeader(),
+      payload: {
+        requestId,
+        baseRevision: applied.json().baseRevision,
+        assignments: assignments.map((assignment: { documentId: string; domain: string }) => ({
+          ...assignment,
+          domain: assignment.documentId === d1 ? '다른 분류' : assignment.domain
+        }))
+      }
+    })
+    expect(conflictingReplay.statusCode).toBe(409)
+    expect(conflictingReplay.json()).toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' })
   })
 
   it('conceals artifacts, documents, events, and same document UUID across owners', async () => {
