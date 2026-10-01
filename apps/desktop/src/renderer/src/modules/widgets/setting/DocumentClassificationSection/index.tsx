@@ -98,7 +98,7 @@ export default function DocumentClassificationSection() {
         )}
         {state.status === 'failed' && (
           <p className={styles.error} role="alert">
-            기존 문서와 서버에 저장된 내용은 변경하지 않았습니다.
+            제목·본문·원문은 보존됩니다. 통신 오류라면 다시 실행하여 서버 반영 여부를 확인해 주세요.
           </p>
         )}
         <div className={styles.actions}>
