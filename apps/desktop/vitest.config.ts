@@ -11,7 +11,7 @@ export default defineConfig({
   },
   test: {
     // 기본 수집 패턴은 폴더 안 test.ts를 잡지 못한다 (.claude/rules/test-strategy.md)
-    include: ['src/**/*.test.{ts,tsx}', 'src/**/test.{ts,tsx}'],
+    include: ['src/**/*.test.{ts,tsx}', 'src/**/test.{ts,tsx}', 'scripts/bench/**/*.test.ts'],
     environment: 'node'
   }
 })
