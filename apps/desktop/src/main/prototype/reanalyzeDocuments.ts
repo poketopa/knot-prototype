@@ -16,7 +16,7 @@ import { runTopicAnalysis } from '../summary/run'
 import { preserveAiFailureArtifact, preserveTopicAnalysisArtifacts } from './artifacts'
 import { requirePrototypeUser } from './authState'
 import { emitPrototypeChanged } from './events'
-import { checkpointAiPublish } from '../pipeline/queue'
+import { checkpointAiPublish } from './publishing'
 import { getRecordingState } from '../audio/session'
 
 export const DOCUMENT_REANALYSIS_PROMPT_VERSION = `${TOPIC_ANALYSIS_PROMPT_VERSION}:document-reanalysis-20260930`
@@ -220,6 +220,10 @@ const candidates = ({ ownerId }: { ownerId: string }) =>
        FROM meetings m
        WHERE m.owner_id=@ownerId
          AND m.status='done'
+         AND NOT EXISTS (
+           SELECT 1 FROM prototype_summary_comparisons c
+           WHERE c.owner_id=m.owner_id AND c.recording_id=m.id AND c.selection_json IS NULL
+         )
          AND EXISTS (
            SELECT 1 FROM prototype_artifacts t
            WHERE t.owner_id=m.owner_id

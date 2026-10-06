@@ -77,12 +77,17 @@ function validateAiAnalysisV2(value: Record<string, unknown>): AiAnalysisV2 {
       if (typeof topic.title !== 'string' || topic.title.trim().length === 0) {
         throw new Error('AI_TOPIC_TITLE_REQUIRED')
       }
+      const summarySections = validateSummarySections(topic.summarySections)
+      const outline = validateOutline(topic.outline)
+      if (summarySections.length === 0 && outline.length === 0) {
+        throw new Error('AI_TOPIC_BODY_EMPTY')
+      }
       return {
         documentId: topic.documentId,
         domain: topic.domain,
         title: topic.title,
-        summarySections: validateSummarySections(topic.summarySections),
-        outline: validateOutline(topic.outline)
+        summarySections,
+        outline
       }
     })
   }
@@ -113,7 +118,7 @@ function validateItems(value: unknown) {
 }
 
 function validateSummarySections(value: unknown) {
-  if (!Array.isArray(value) || value.length === 0) {
+  if (!Array.isArray(value)) {
     throw new Error('AI_SUMMARY_SECTIONS_INVALID')
   }
   return value.map((section) => {

@@ -1,6 +1,7 @@
 import { BrowserWindow, clipboard, ipcMain, systemPreferences } from 'electron'
 import {
   IPC,
+  type ChoosePrototypeComparisonRequest,
   type CheckLlmResponse,
   type DownloadModelsResponse,
   type GetLlmStatusResponse,
@@ -8,6 +9,7 @@ import {
   type GetMeetingResponse,
   type GetMeetingsResponse,
   type GetPrototypeAuthStateResponse,
+  type GetPrototypeComparisonResponse,
   type GetPrototypeDocumentResponse,
   type GetPrototypeProcessingResponse,
   type DraftGlossaryResponse,
@@ -38,6 +40,11 @@ import {
   type SetupStatusResponse,
   type TrackPrototypeEventRequest
 } from '@shared/ipc'
+import type {
+  SummaryMeetingType,
+  SummarySelectionReason,
+  SummaryVariant
+} from '@meeting-stt/prototype-contracts/types'
 import { readGlossarySettings, readTeamDescription } from '@shared/glossary'
 import { isLlmProvider, isOpenaiModelId, readApiKeyPayload } from '@shared/llm'
 import { isValidAccelerator } from '@shared/shortcut'
@@ -99,6 +106,7 @@ import {
   getDocumentClassificationState,
   startDocumentClassification
 } from '../prototype/classifyDocuments'
+import { choosePrototypeComparison, getPrototypeComparison } from '../prototype/comparisons'
 
 const FULL_PERCENT = 100
 
@@ -136,6 +144,9 @@ const readText = ({ payload, key, maxLength, label }: ReadTextParams) => {
 const readMeetingId = (payload: unknown) =>
   readText({ payload, key: 'meetingId', maxLength: LABEL_MAX_LENGTH, label: '회의 ID' })
 
+const readRecordingId = (payload: unknown) =>
+  readText({ payload, key: 'recordingId', maxLength: LABEL_MAX_LENGTH, label: '녹음 ID' })
+
 const readSampleRate = (payload: unknown) => {
   if (!isRecord(payload) || typeof payload.sampleRate !== 'number') {
     throw new Error('잘못된 요청입니다 (sampleRate 없음)')
@@ -162,6 +173,49 @@ const readPcm = (payload: unknown) => {
   }
 
   return payload.pcm
+}
+
+const SUMMARY_VARIANTS: SummaryVariant[] = ['A', 'B']
+const SUMMARY_REASONS: SummarySelectionReason[] = [
+  'decisions_actions',
+  'accuracy',
+  'readability',
+  'other'
+]
+const SUMMARY_MEETING_TYPES: SummaryMeetingType[] = [
+  'multi_agenda',
+  'interview_feedback',
+  'introduction_sharing'
+]
+
+const readPrototypeComparisonChoice = (payload: unknown): ChoosePrototypeComparisonRequest => {
+  const selectedVariant = isRecord(payload) ? payload.selectedVariant : undefined
+  const reason = isRecord(payload) ? payload.reason : undefined
+  const meetingType = isRecord(payload) ? payload.meetingType : undefined
+  if (!SUMMARY_VARIANTS.includes(selectedVariant as SummaryVariant)) {
+    throw new Error('알 수 없는 정리 선택입니다')
+  }
+  if (!SUMMARY_REASONS.includes(reason as SummarySelectionReason)) {
+    throw new Error('선택 이유를 골라 주세요')
+  }
+  if (!SUMMARY_MEETING_TYPES.includes(meetingType as SummaryMeetingType)) {
+    throw new Error('회의 종류를 골라 주세요')
+  }
+  const otherReason =
+    isRecord(payload) && typeof payload.otherReason === 'string'
+      ? payload.otherReason.trim()
+      : undefined
+  if (otherReason && otherReason.length > 500) {
+    throw new Error('기타 이유는 500자 이내로 써 주세요')
+  }
+
+  return {
+    recordingId: readRecordingId(payload),
+    selectedVariant: selectedVariant as SummaryVariant,
+    reason: reason as SummarySelectionReason,
+    meetingType: meetingType as SummaryMeetingType,
+    ...(otherReason ? { otherReason } : {})
+  }
 }
 
 const readBoolean = ({ payload, key }: { payload: unknown; key: string }) => {
@@ -318,9 +372,6 @@ const handleWriteClipboardText = (payload: unknown) => {
 const readDocumentId = (payload: unknown) =>
   readText({ payload, key: 'documentId', maxLength: LABEL_MAX_LENGTH, label: '문서 ID' })
 
-const readRecordingId = (payload: unknown) =>
-  readText({ payload, key: 'recordingId', maxLength: LABEL_MAX_LENGTH, label: '녹음 ID' })
-
 const PROTOTYPE_EVENT_TYPES: TrackPrototypeEventRequest['eventType'][] = [
   'login_succeeded',
   'recording_started',
@@ -453,6 +504,14 @@ export const registerIpcHandlers = () => {
   ipcMain.handle(IPC.prototype.getProcessing, (): GetPrototypeProcessingResponse =>
     listPrototypeProcessing()
   )
+
+  ipcMain.handle(IPC.prototype.getComparison, (_event, payload): GetPrototypeComparisonResponse =>
+    getPrototypeComparison({ recordingId: readRecordingId(payload) })
+  )
+
+  ipcMain.handle(IPC.prototype.chooseComparison, (_event, payload): void => {
+    choosePrototypeComparison(readPrototypeComparisonChoice(payload))
+  })
 
   ipcMain.handle(IPC.prototype.retry, (_event, payload): RetryPrototypeProcessingResponse => {
     const meetingId = readMeetingId(payload)

@@ -1,4 +1,5 @@
 import type { PrototypeChangedEvent, PrototypeTrackEventRequest } from '@shared/prototype'
+import type { ChoosePrototypeComparisonRequest } from '@shared/ipc'
 
 export const getAuthStateApi = () => window.api.prototype.authState()
 export const loginApi = () => window.api.prototype.login()
@@ -17,6 +18,10 @@ export const getDocumentApi = (documentId: string) =>
 export const getTranscriptApi = (recordingId: string, artifactId?: string) =>
   window.api.prototype.readTranscript(artifactId ? { recordingId, artifactId } : { recordingId })
 export const getProcessingApi = () => window.api.prototype.getProcessing()
+export const getComparisonApi = (recordingId: string) =>
+  window.api.prototype.getComparison({ recordingId })
+export const chooseComparisonApi = (payload: ChoosePrototypeComparisonRequest) =>
+  window.api.prototype.chooseComparison(payload)
 export const retryProcessingApi = (meetingId: string) => window.api.prototype.retry({ meetingId })
 export const trackApi = (event: PrototypeTrackEventRequest) => window.api.prototype.track(event)
 export const onPrototypeChanged = (listener: (event: PrototypeChangedEvent) => void) =>

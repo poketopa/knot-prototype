@@ -12,7 +12,13 @@ import { prototypeUserRoot, requirePrototypeUser } from './authState'
 import { prototypeRequest } from './apiClient'
 
 export type PrototypeArtifactKind =
-  'wav' | 'transcript' | 'ai_raw' | 'ai_analysis' | 'ai_partial' | 'meeting_summary'
+  | 'wav'
+  | 'transcript'
+  | 'ai_raw'
+  | 'ai_analysis'
+  | 'ai_partial'
+  | 'meeting_summary'
+  | 'ai_comparison'
 
 interface RegisterArtifactParams {
   recordingId: string
@@ -550,10 +556,14 @@ export const findPrototypeArtifact = ({
   const owner = requirePrototypeUser()
   return getDb()
     .prepare(
-      `SELECT id, local_path, content_json, sha256, byte_length
-       FROM prototype_artifacts
-       WHERE owner_id = @ownerId AND recording_id = @recordingId AND kind = @kind
-       ORDER BY created_at DESC, rowid DESC
+      `SELECT a.id, a.local_path, a.content_json, a.sha256, a.byte_length
+       FROM prototype_artifacts a
+       LEFT JOIN prototype_summary_comparisons c ON c.owner_id=a.owner_id AND c.recording_id=a.recording_id
+       WHERE a.owner_id = @ownerId AND a.recording_id = @recordingId AND a.kind = @kind
+         AND (@kind != 'ai_analysis' OR c.recording_id IS NULL OR
+           (c.selection_json IS NOT NULL AND a.id != CASE json_extract(c.selection_json,'$.selectedVariant')
+             WHEN 'A' THEN c.analysis_b_id ELSE c.analysis_a_id END))
+       ORDER BY a.created_at DESC, a.rowid DESC
        LIMIT 1`
     )
     .get({ ownerId: owner.id, recordingId, kind }) as

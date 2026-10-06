@@ -67,7 +67,15 @@ export const artifactPutRequestSchema = {
   properties: {
     kind: {
       type: 'string',
-      enum: ['wav', 'transcript', 'ai_raw', 'ai_analysis', 'ai_partial', 'meeting_summary']
+      enum: [
+        'wav',
+        'transcript',
+        'ai_raw',
+        'ai_analysis',
+        'ai_partial',
+        'meeting_summary',
+        'ai_comparison'
+      ]
     },
     attemptId: { type: 'string', minLength: 1, maxLength: 128 },
     content: {},
@@ -86,7 +94,25 @@ export const publishRequestSchema = {
   properties: {
     analysisArtifactId: uuid,
     transcriptArtifactId: uuid,
-    replaceRecordingDocuments: { type: 'boolean' }
+    replaceRecordingDocuments: { type: 'boolean' },
+    selection: {
+      type: 'object',
+      required: ['comparisonArtifactId', 'selectedVariant', 'reason', 'meetingType'],
+      properties: {
+        comparisonArtifactId: uuid,
+        selectedVariant: { type: 'string', enum: ['A', 'B'] },
+        reason: {
+          type: 'string',
+          enum: ['decisions_actions', 'accuracy', 'readability', 'other']
+        },
+        meetingType: {
+          type: 'string',
+          enum: ['multi_agenda', 'interview_feedback', 'introduction_sharing']
+        },
+        otherReason: { type: 'string', maxLength: 500 }
+      },
+      ...noExtra
+    }
   },
   ...noExtra
 } as const
@@ -177,8 +203,8 @@ export const aiTopicV2Schema = {
     documentId: uuid,
     domain: { type: 'string', minLength: 1, maxLength: 160 },
     title: { type: 'string', minLength: 1, maxLength: 160 },
-    summarySections: { type: 'array', minItems: 1, items: aiSummarySectionSchema },
-    outline: { type: 'array', minItems: 1, items: aiOutlineSectionSchema }
+    summarySections: { type: 'array', items: aiSummarySectionSchema },
+    outline: { type: 'array', items: aiOutlineSectionSchema }
   },
   ...noExtra
 } as const

@@ -156,8 +156,24 @@ export const listPrototypeProcessing = () => {
     byRecording.set(row.recording_id, [...(byRecording.get(row.recording_id) ?? []), row])
   }
 
+  const comparisons = new Map(
+    (
+      getDb()
+        .prepare(
+          'SELECT recording_id,comparison_artifact_id,selection_json FROM prototype_summary_comparisons WHERE owner_id=?'
+        )
+        .all(owner.id) as Array<{
+        recording_id: string
+        comparison_artifact_id: string | null
+        selection_json: string | null
+      }>
+    ).map((row) => [row.recording_id, row])
+  )
+
   return [...meetings.values()].map((meeting): PrototypeProcessingItem => {
     const jobs = byRecording.get(meeting.id) ?? []
+    const comparison = comparisons.get(meeting.id)
+    const choosing = Boolean(comparison?.comparison_artifact_id && !comparison.selection_json)
     const localJobs = jobs.filter((job) => job.kind === 'transcript' || job.kind === 'ai')
     const failed = jobs.find((job) => job.status === 'failed')
     const running = jobs.find((job) => job.status === 'running')
@@ -197,16 +213,17 @@ export const listPrototypeProcessing = () => {
       meetingId: meeting.id,
       title: meeting.title,
       startedAt: new Date(meeting.createdAt).toISOString(),
-      status,
-      stage:
-        active?.stage ??
-        (meeting.status === 'recording'
-          ? 'recording'
-          : meeting.status === 'processing'
-            ? 'transcribing'
-            : meeting.status === 'error'
-              ? 'error'
-              : 'done'),
+      status: choosing ? 'pending' : status,
+      stage: choosing
+        ? 'choosing'
+        : (active?.stage ??
+          (meeting.status === 'recording'
+            ? 'recording'
+            : meeting.status === 'processing'
+              ? 'transcribing'
+              : meeting.status === 'error'
+                ? 'error'
+                : 'done')),
       ...(active?.last_error && active.kind !== 'sync' ? { error: active.last_error } : {}),
       ...(syncError ? { syncError } : {}),
       completedStages,

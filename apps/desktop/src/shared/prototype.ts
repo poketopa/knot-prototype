@@ -1,4 +1,10 @@
-import type { Utterance } from './types'
+import type {
+  SummaryMeetingType,
+  SummarySelection,
+  SummarySelectionReason,
+  SummaryVariant
+} from '@meeting-stt/prototype-contracts/types'
+import type { TopicAnalysisGeneratedTopic, Utterance } from './types'
 
 export const prototypeBroadDocumentDomain = ({
   domain,
@@ -111,7 +117,14 @@ export interface PrototypeMeetingSummary {
 }
 
 export type PrototypeProcessingStage =
-  'recording' | 'transcribing' | 'summarizing' | 'publishing' | 'syncing' | 'done' | 'error'
+  | 'recording'
+  | 'transcribing'
+  | 'summarizing'
+  | 'choosing'
+  | 'publishing'
+  | 'syncing'
+  | 'done'
+  | 'error'
 
 export interface PrototypeProcessingItem {
   meetingId: string
@@ -126,6 +139,25 @@ export interface PrototypeProcessingItem {
   syncError?: string
   canRetry?: boolean
   recordingWarning?: string
+}
+
+export interface PrototypeComparisonCandidate {
+  variant: SummaryVariant
+  topics: TopicAnalysisGeneratedTopic[]
+}
+
+export interface PrototypeComparison {
+  firstVariant: SummaryVariant
+  candidates: PrototypeComparisonCandidate[]
+  selection: SummarySelection | null
+}
+
+export interface PrototypeChooseComparisonRequest {
+  recordingId: string
+  selectedVariant: SummaryVariant
+  reason: SummarySelectionReason
+  meetingType: SummaryMeetingType
+  otherReason?: string
 }
 
 export type PrototypeEventType =

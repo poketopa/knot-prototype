@@ -15,12 +15,13 @@ import {
   splitTopicAnalysisUtterances,
   SUMMARY_MAX_PREDICT_TOKENS,
   SUMMARY_SYSTEM_PROMPT,
-  TOPIC_ANALYSIS_PROMPT_VERSION,
-  TOPIC_ANALYSIS_SYSTEM_PROMPT,
+  topicAnalysisPromptVersionForVariant,
+  topicAnalysisSystemPromptForVariant,
   TOPIC_ANALYSIS_MAX_PREDICT_TOKENS,
   TOPIC_ANALYSIS_LOCAL_INPUT_CHARS,
   TOPIC_ANALYSIS_JSON_GRAMMAR
 } from '@shared/summary'
+import type { TopicAnalysisPromptVariant } from '@shared/summary'
 import type {
   SummaryStage,
   TopicAnalysisAttempt,
@@ -56,6 +57,8 @@ interface RunTopicAnalysisParams {
   utterances: TopicAnalysisUtterance[]
   documents: TopicAnalysisDocument[]
   onProgress: (progress: ProgressParams) => void
+  variant?: TopicAnalysisPromptVariant
+  client?: LlmClient
 }
 
 interface CompleteParams {
@@ -166,6 +169,7 @@ interface CompleteTopicParams {
   utterances: TopicAnalysisUtterance[]
   documents: TopicAnalysisDocument[]
   rawLabels: string[]
+  variant: TopicAnalysisPromptVariant
 }
 
 const topicInputBudget = (client: LlmClient) =>
@@ -173,8 +177,16 @@ const topicInputBudget = (client: LlmClient) =>
     ? Math.min(client.chunkBudgetChars, TOPIC_ANALYSIS_LOCAL_INPUT_CHARS)
     : client.chunkBudgetChars
 
-const topicPromptFits = (client: LlmClient, prompt: string) =>
-  prompt.length + TOPIC_ANALYSIS_SYSTEM_PROMPT.length <= topicInputBudget(client)
+const topicPromptFits = ({
+  client,
+  prompt,
+  variant
+}: {
+  client: LlmClient
+  prompt: string
+  variant: TopicAnalysisPromptVariant
+}) =>
+  prompt.length + topicAnalysisSystemPromptForVariant(variant).length <= topicInputBudget(client)
 
 const completeTopic = async ({
   client,
@@ -183,17 +195,20 @@ const completeTopic = async ({
   label,
   utterances,
   documents,
-  rawLabels
+  rawLabels,
+  variant
 }: CompleteTopicParams) => {
+  const system = topicAnalysisSystemPromptForVariant(variant)
+  const promptVersion = topicAnalysisPromptVersionForVariant(variant)
   try {
-    if (!topicPromptFits(client, prompt)) {
+    if (!topicPromptFits({ client, prompt, variant })) {
       throw new Error('AI 분석 입력이 모델의 처리 범위를 넘었습니다. 원본 전사는 보관되어 있습니다')
     }
     const cacheKey = JSON.stringify({
       provider: client.provider,
       model: client.model,
-      promptVersion: TOPIC_ANALYSIS_PROMPT_VERSION,
-      system: TOPIC_ANALYSIS_SYSTEM_PROMPT,
+      promptVersion,
+      system,
       prompt
     })
     await writeFile(path.join(workDir, `${label}.input.json`), cacheKey, { flag: 'wx' })
@@ -225,7 +240,7 @@ const completeTopic = async ({
       }
     }
     const raw = await client.complete({
-      system: TOPIC_ANALYSIS_SYSTEM_PROMPT,
+      system,
       prompt,
       maxTokens: TOPIC_ANALYSIS_MAX_PREDICT_TOKENS,
       label,
@@ -252,7 +267,7 @@ const completeTopic = async ({
         label,
         provider: client.provider,
         model: client.model,
-        promptVersion: TOPIC_ANALYSIS_PROMPT_VERSION,
+        promptVersion,
         error: messageOf(caught),
         diagnostics
       }
@@ -268,6 +283,7 @@ interface TopicMapReduceParams {
   workDir: string
   onProgress: (progress: ProgressParams) => void
   rawLabels: string[]
+  variant: TopicAnalysisPromptVariant
 }
 
 const sourceIdsOf = (results: TopicAnalysisResult[]) =>
@@ -329,7 +345,8 @@ const reduceTopics = async ({
   documents,
   utterances,
   workDir,
-  rawLabels
+  rawLabels,
+  variant
 }: Omit<TopicMapReduceParams, 'chunks' | 'onProgress'> & {
   partials: TopicAnalysisResult[]
   utterances: TopicAnalysisUtterance[]
@@ -343,10 +360,11 @@ const reduceTopics = async ({
       const candidate = [...batch, partial]
       if (
         batch.length &&
-        !topicPromptFits(
+        !topicPromptFits({
           client,
-          buildTopicReducePrompt({ partials: candidate, documents, utterances })
-        )
+          prompt: buildTopicReducePrompt({ partials: candidate, documents, utterances, variant }),
+          variant
+        })
       ) {
         batches.push(batch)
         batch = []
@@ -379,7 +397,8 @@ const reduceTopics = async ({
           documents,
           utterances,
           rawLabels,
-          prompt: buildTopicReducePrompt({ partials: items, documents, utterances }),
+          variant,
+          prompt: buildTopicReducePrompt({ partials: items, documents, utterances, variant }),
           label: `topic-reduce-${round}-${index}`
         })
         const preserved = sourceIdsOf([result])
@@ -414,7 +433,8 @@ const topicMapReduce = async ({
   documents,
   workDir,
   onProgress,
-  rawLabels
+  rawLabels,
+  variant
 }: TopicMapReduceParams) => {
   const partials: TopicAnalysisResult[] = []
   const allUtterances = chunks.flat()
@@ -424,11 +444,18 @@ const topicMapReduce = async ({
     const partial = await completeTopic({
       client,
       workDir,
-      prompt: buildTopicChunkPrompt({ utterances, documents, index, total: chunks.length }),
+      prompt: buildTopicChunkPrompt({
+        utterances,
+        documents,
+        index,
+        total: chunks.length,
+        variant
+      }),
       label: `topic-chunk-${index}`,
       utterances,
       documents,
-      rawLabels
+      rawLabels,
+      variant
     })
     await writeJson({
       file: path.join(workDir, `topic-chunk-${index}.partial.json`),
@@ -444,7 +471,8 @@ const topicMapReduce = async ({
     documents,
     utterances: allUtterances,
     workDir,
-    rawLabels
+    rawLabels,
+    variant
   })
   await writeJson({ file: path.join(workDir, 'topic-reduce.result.json'), value: reduced })
 
@@ -455,17 +483,20 @@ export const runTopicAnalysis = async ({
   meetingId,
   utterances,
   documents,
-  onProgress
+  onProgress,
+  variant = 'A',
+  client: providedClient
 }: RunTopicAnalysisParams): Promise<TopicAnalysisAttempt> => {
   const attemptId = randomUUID()
   const workDir = await createAttemptDir({ meetingId, attemptId })
   const emptyResult: TopicAnalysisResult = { schemaVersion: 2, topics: [] }
+  const promptVersion = topicAnalysisPromptVersionForVariant(variant)
   if (!utterances.length) {
     const attempt: TopicAnalysisAttempt = {
       id: attemptId,
       provider: 'local',
       model: null,
-      promptVersion: TOPIC_ANALYSIS_PROMPT_VERSION,
+      promptVersion,
       rawResponses: [],
       partialResults: [],
       result: emptyResult
@@ -475,17 +506,18 @@ export const runTopicAnalysis = async ({
     return attempt
   }
 
-  const client = await createLlmClient()
+  const client = providedClient ?? (await createLlmClient())
   const inputBudget = topicInputBudget(client)
   const overhead =
-    TOPIC_ANALYSIS_SYSTEM_PROMPT.length +
+    topicAnalysisSystemPromptForVariant(variant).length +
     Math.max(
-      buildTopicWholePrompt({ documents, utterances: [] }).length,
+      buildTopicWholePrompt({ documents, utterances: [], variant }).length,
       buildTopicChunkPrompt({
         documents,
         utterances: [],
         index: utterances.length,
-        total: utterances.length
+        total: utterances.length,
+        variant
       }).length
     )
   assertTopicCatalogFits({ documents, budgetChars: inputBudget })
@@ -508,7 +540,7 @@ export const runTopicAnalysis = async ({
       id: attemptId,
       provider: client.provider,
       model: client.model,
-      promptVersion: TOPIC_ANALYSIS_PROMPT_VERSION,
+      promptVersion,
       rawResponses: [],
       partialResults: [],
       result: emptyResult
@@ -528,15 +560,16 @@ export const runTopicAnalysis = async ({
             result: await completeTopic({
               client,
               workDir,
-              prompt: buildTopicWholePrompt({ utterances: chunks[0], documents }),
+              prompt: buildTopicWholePrompt({ utterances: chunks[0], documents, variant }),
               label: 'topic-whole',
               utterances: chunks[0],
               documents,
-              rawLabels
+              rawLabels,
+              variant
             })
           }
         })()
-      : await topicMapReduce({ client, chunks, documents, workDir, onProgress, rawLabels })
+      : await topicMapReduce({ client, chunks, documents, workDir, onProgress, rawLabels, variant })
 
   const rawResponses = await Promise.all(
     rawLabels.map(async (label) => ({
@@ -548,7 +581,7 @@ export const runTopicAnalysis = async ({
     id: attemptId,
     provider: client.provider,
     model: client.model,
-    promptVersion: TOPIC_ANALYSIS_PROMPT_VERSION,
+    promptVersion,
     rawResponses,
     partialResults: partials,
     result

@@ -14,8 +14,10 @@ import type {
 } from './types'
 import type {
   PrototypeAuthState,
+  PrototypeChooseComparisonRequest,
   DocumentClassificationState,
   PrototypeChangedEvent,
+  PrototypeComparison,
   PrototypeDocumentDetail,
   PrototypeDocumentListItem,
   PrototypeMeetingSummary,
@@ -83,6 +85,8 @@ export const IPC = {
     getDocument: 'prototype:documents:get',
     readTranscript: 'prototype:artifacts:readTranscript',
     getProcessing: 'prototype:processing:get',
+    getComparison: 'prototype:comparison:get',
+    chooseComparison: 'prototype:comparison:choose',
     retry: 'prototype:processing:retry',
     track: 'prototype:analytics:track'
   },
@@ -390,6 +394,13 @@ export interface ReadPrototypeTranscriptRequest {
 export type ReadPrototypeTranscriptResponse = PrototypeTranscript | null
 
 export type GetPrototypeProcessingResponse = PrototypeProcessingItem[]
+
+export interface GetPrototypeComparisonRequest {
+  recordingId: string
+}
+export type GetPrototypeComparisonResponse = PrototypeComparison | null
+
+export type ChoosePrototypeComparisonRequest = PrototypeChooseComparisonRequest
 
 export interface RegenerateMeetingSummaryRequest {
   meetingId: string

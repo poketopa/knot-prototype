@@ -54,7 +54,13 @@ export type RecordingResponse = {
 }
 
 export type ArtifactKind =
-  'wav' | 'transcript' | 'ai_raw' | 'ai_analysis' | 'ai_partial' | 'meeting_summary'
+  | 'wav'
+  | 'transcript'
+  | 'ai_raw'
+  | 'ai_analysis'
+  | 'ai_partial'
+  | 'meeting_summary'
+  | 'ai_comparison'
 
 export type ArtifactPutRequest = {
   kind: ArtifactKind
@@ -95,6 +101,28 @@ export type PublishRequest = {
   analysisArtifactId: Uuid
   transcriptArtifactId?: Uuid
   replaceRecordingDocuments?: boolean
+  selection?: SummarySelection
+}
+
+export type SummaryVariant = 'A' | 'B'
+
+export type SummarySelectionReason = 'decisions_actions' | 'accuracy' | 'readability' | 'other'
+
+export type SummaryMeetingType = 'multi_agenda' | 'interview_feedback' | 'introduction_sharing'
+
+export type SummarySelection = {
+  comparisonArtifactId: Uuid
+  selectedVariant: SummaryVariant
+  reason: SummarySelectionReason
+  meetingType: SummaryMeetingType
+  otherReason?: string
+}
+
+export type AiComparison = {
+  schemaVersion: 1
+  transcriptArtifactId: Uuid
+  candidates: Record<SummaryVariant, Uuid>
+  firstVariant: SummaryVariant
 }
 
 export type AiDecisionItem = {

@@ -41,13 +41,22 @@ interface TreeRow {
 const latestAnalysisTopicsByRecording = (ownerId: string) => {
   const rows = getDb()
     .prepare(
-      `SELECT recording_id, content_json
-       FROM prototype_artifacts
-       WHERE owner_id = ? AND kind = 'ai_analysis'
-       ORDER BY recording_id, created_at DESC, rowid DESC`
+      `SELECT a.recording_id, a.content_json
+       FROM prototype_artifacts a
+       LEFT JOIN prototype_summary_comparisons c ON c.owner_id=a.owner_id AND c.recording_id=a.recording_id
+       WHERE a.owner_id = ? AND a.kind = 'ai_analysis'
+         AND (c.recording_id IS NULL OR (c.selection_json IS NOT NULL AND a.id !=
+           CASE json_extract(c.selection_json,'$.selectedVariant') WHEN 'A' THEN c.analysis_b_id ELSE c.analysis_a_id END))
+       ORDER BY a.recording_id, a.created_at DESC, a.rowid DESC`
     )
     .all(ownerId) as Array<{ recording_id: string; content_json: string | null }>
   const active = new Map<string, Set<string>>()
+  const waiting = getDb()
+    .prepare(
+      'SELECT recording_id FROM prototype_summary_comparisons WHERE owner_id=? AND selection_json IS NULL'
+    )
+    .all(ownerId) as Array<{ recording_id: string }>
+  for (const row of waiting) active.set(row.recording_id, new Set())
 
   for (const row of rows) {
     if (active.has(row.recording_id)) continue
@@ -270,7 +279,11 @@ const populateLocalTree = (ownerId: string) => {
     .prepare(
       `SELECT a.content_json,a.recording_id,m.created_at,m.duration_sec
     FROM prototype_artifacts a JOIN meetings m ON m.id=a.recording_id AND m.owner_id=a.owner_id
-    WHERE a.owner_id=? AND a.kind='ai_analysis' ORDER BY a.created_at`
+    LEFT JOIN prototype_summary_comparisons c ON c.owner_id=a.owner_id AND c.recording_id=a.recording_id
+    WHERE a.owner_id=? AND a.kind='ai_analysis'
+      AND (c.recording_id IS NULL OR (c.selection_json IS NOT NULL AND a.id !=
+        CASE json_extract(c.selection_json,'$.selectedVariant') WHEN 'A' THEN c.analysis_b_id ELSE c.analysis_a_id END))
+    ORDER BY a.created_at`
     )
     .all(ownerId) as Array<{
     content_json: string | null

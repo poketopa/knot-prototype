@@ -56,7 +56,7 @@ describe('validateAiAnalysis', () => {
       })
     ).toMatchObject({ schemaVersion: 1 })
 
-    expect(() =>
+    expect(
       validateAiAnalysis({
         schemaVersion: 2,
         topics: [
@@ -74,7 +74,22 @@ describe('validateAiAnalysis', () => {
           }
         ]
       })
-    ).toThrow('AI_SUMMARY_SECTIONS_INVALID')
+    ).toMatchObject({ schemaVersion: 2, topics: [{ summarySections: [] }] })
+
+    expect(() =>
+      validateAiAnalysis({
+        schemaVersion: 2,
+        topics: [
+          {
+            documentId: '550e8400-e29b-41d4-a716-446655440001',
+            domain: '제품',
+            title: 'A',
+            summarySections: [],
+            outline: []
+          }
+        ]
+      })
+    ).toThrow('AI_TOPIC_BODY_EMPTY')
 
     expect(() =>
       validateAiAnalysis({

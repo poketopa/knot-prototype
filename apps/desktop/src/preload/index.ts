@@ -4,6 +4,7 @@ import {
   type CheckLlmResponse,
   type CheckUpdateResponse,
   type DeleteMeetingRequest,
+  type ChoosePrototypeComparisonRequest,
   type GetLlmStatusResponse,
   type SetLlmApiKeyRequest,
   type SetLlmApiKeyResponse,
@@ -20,6 +21,8 @@ import {
   type GetMeetingResponse,
   type GetMeetingsResponse,
   type GetPrototypeAuthStateResponse,
+  type GetPrototypeComparisonRequest,
+  type GetPrototypeComparisonResponse,
   type GetPrototypeDocumentRequest,
   type GetPrototypeDocumentResponse,
   type GetPrototypeProcessingResponse,
@@ -190,6 +193,12 @@ const api = {
       ipcRenderer.invoke(IPC.prototype.readTranscript, payload),
     getProcessing: (): Promise<GetPrototypeProcessingResponse> =>
       ipcRenderer.invoke(IPC.prototype.getProcessing),
+    getComparison: (
+      payload: GetPrototypeComparisonRequest
+    ): Promise<GetPrototypeComparisonResponse> =>
+      ipcRenderer.invoke(IPC.prototype.getComparison, payload),
+    chooseComparison: (payload: ChoosePrototypeComparisonRequest): Promise<void> =>
+      ipcRenderer.invoke(IPC.prototype.chooseComparison, payload),
     retry: (payload: RetryPrototypeProcessingRequest): Promise<RetryPrototypeProcessingResponse> =>
       ipcRenderer.invoke(IPC.prototype.retry, payload),
     track: (payload: TrackPrototypeEventRequest): Promise<void> =>

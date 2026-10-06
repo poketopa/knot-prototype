@@ -6,18 +6,27 @@ import { MemoryRouter, Route, Routes } from 'react-router'
 import type { PrototypeProcessingItem } from '@shared/prototype'
 import Processing, { ProcessingContent } from './index'
 
-const { getProcessingApi, getDocumentsApi, getDocumentApi, retryProcessingApi } = vi.hoisted(
-  () => ({
-    getProcessingApi: vi.fn(),
-    getDocumentsApi: vi.fn(async () => []),
-    getDocumentApi: vi.fn(),
-    retryProcessingApi: vi.fn()
-  })
-)
+const {
+  getProcessingApi,
+  getDocumentsApi,
+  getDocumentApi,
+  getComparisonApi,
+  chooseComparisonApi,
+  retryProcessingApi
+} = vi.hoisted(() => ({
+  getProcessingApi: vi.fn(),
+  getDocumentsApi: vi.fn(async () => []),
+  getDocumentApi: vi.fn(),
+  getComparisonApi: vi.fn(),
+  chooseComparisonApi: vi.fn(),
+  retryProcessingApi: vi.fn()
+}))
 vi.mock('@renderer/shared/api/prototype', () => ({
   getProcessingApi,
   getDocumentsApi,
   getDocumentApi,
+  getComparisonApi,
+  chooseComparisonApi,
   retryProcessingApi,
   onPrototypeChanged: () => () => {}
 }))
@@ -32,6 +41,43 @@ afterEach(() => {
 function renderProcessing(item: PrototypeProcessingItem) {
   getProcessingApi.mockResolvedValue([item])
   getDocumentsApi.mockResolvedValue([])
+  return render(
+    <MemoryRouter initialEntries={['/processing/meeting-1']}>
+      <Routes>
+        <Route path="/processing/:meetingId" element={<Processing />} />
+      </Routes>
+    </MemoryRouter>
+  )
+}
+
+const topicOf = (title: string, sectionText: string, outlineText: string) => ({
+  documentId: `${title}-doc`,
+  domain: title,
+  title,
+  summarySections: [{ heading: '핵심 요약', text: sectionText, sourceUtteranceIds: ['u1'] }],
+  outline: [{ heading: '결정', items: [{ text: outlineText, sourceUtteranceIds: ['u2'] }] }]
+})
+
+function renderChoosing() {
+  getProcessingApi.mockResolvedValue([
+    {
+      meetingId: 'meeting-1',
+      title: '회의',
+      status: 'pending',
+      stage: 'choosing',
+      completedStages: ['recording', 'transcribing', 'summarizing'],
+      hasTranscript: true
+    }
+  ])
+  getComparisonApi.mockResolvedValue({
+    firstVariant: 'B',
+    candidates: [
+      { variant: 'A', topics: [topicOf('A쪽 내부 제목', 'A쪽 요약', 'A쪽 결정')] },
+      { variant: 'B', topics: [topicOf('고객 온보딩', '고객 온보딩 요약', '다음 주 배포한다')] }
+    ],
+    selection: null
+  })
+  if (!chooseComparisonApi.getMockImplementation()) chooseComparisonApi.mockResolvedValue(undefined)
   return render(
     <MemoryRouter initialEntries={['/processing/meeting-1']}>
       <Routes>
@@ -159,6 +205,67 @@ describe('processing status', () => {
     })
     expect(await screen.findByRole('heading', { name: '주제별 문서를 만들고 있어요' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '새 녹음' })).toBeTruthy()
+  })
+
+  it('shows blinded A/B topic bundles in the stored random order', async () => {
+    renderChoosing()
+
+    expect(
+      await screen.findByRole('heading', { name: '더 마음에 드는 정리를 골라 주세요' })
+    ).toBeTruthy()
+    const choices = screen.getAllByText(/정리 [12]/).map((node) => node.textContent)
+    expect(choices).toEqual(['정리 1', '정리 2'])
+    expect(screen.getByText('고객 온보딩')).toBeTruthy()
+    expect(screen.getByText('고객 온보딩 요약')).toBeTruthy()
+    expect(screen.getByText('다음 주 배포한다')).toBeTruthy()
+    expect(screen.getByText('A쪽 내부 제목')).toBeTruthy()
+    expect(screen.queryByText('A')).toBeNull()
+    expect(screen.queryByText('B')).toBeNull()
+  })
+
+  it('requires a candidate, reason, and meeting type before publishing the chosen summary', async () => {
+    const user = userEvent.setup()
+    renderChoosing()
+
+    const submit = await screen.findByRole('button', { name: '선택한 정리 발행' })
+    expect(submit.hasAttribute('disabled')).toBe(true)
+
+    await user.click(screen.getByLabelText('정리 1'))
+    await user.click(screen.getByLabelText('결정·할 일이 더 잘 보여'))
+    expect(submit.hasAttribute('disabled')).toBe(true)
+
+    await user.click(screen.getByLabelText('여러 안건 회의'))
+    expect(submit.hasAttribute('disabled')).toBe(false)
+    await user.click(submit)
+
+    expect(chooseComparisonApi).toHaveBeenCalledWith({
+      recordingId: 'meeting-1',
+      selectedVariant: 'B',
+      reason: 'decisions_actions',
+      meetingType: 'multi_agenda'
+    })
+  })
+
+  it('surfaces comparison submission errors without dropping the form', async () => {
+    const user = userEvent.setup()
+    chooseComparisonApi.mockRejectedValue(new Error('이미 선택했습니다'))
+    renderChoosing()
+
+    await screen.findByRole('heading', { name: '더 마음에 드는 정리를 골라 주세요' })
+    await user.click(screen.getByLabelText('정리 2'))
+    await user.click(screen.getByLabelText('기타'))
+    await user.type(screen.getByPlaceholderText('이유를 적어 주세요'), '구조가 낫다')
+    await user.click(screen.getByLabelText('인터뷰·피드백'))
+    await user.click(screen.getByRole('button', { name: '선택한 정리 발행' }))
+
+    expect((await screen.findByRole('alert')).textContent).toContain('이미 선택했습니다')
+    expect(chooseComparisonApi).toHaveBeenCalledWith({
+      recordingId: 'meeting-1',
+      selectedVariant: 'A',
+      reason: 'other',
+      meetingType: 'interview_feedback',
+      otherReason: '구조가 낫다'
+    })
   })
 
   it('does not offer an absent transcript merely because processing failed', async () => {

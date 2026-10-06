@@ -1,6 +1,6 @@
 {
   "name": "meeting-stt",
-  "version": "0.3.0-preview.14",
+  "version": "0.3.0-preview.15",
   "description": "Knot macOS 개인 회의 기록 프로토타입",
   "private": true,
   "main": "./out/main/index.js",
@@ -36,6 +36,7 @@
     "@meeting-stt/core": "workspace:*",
     "@meeting-stt/design": "workspace:*",
     "@meeting-stt/models": "workspace:*",
+    "@meeting-stt/prototype-contracts": "workspace:*",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.6",
     "@types/better-sqlite3": "^9.6.0",

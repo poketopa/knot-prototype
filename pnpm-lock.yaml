@@ -94,6 +94,9 @@ importers:
       '@meeting-stt/models':
         specifier: workspace:*
         version: link:../../packages/models
+      '@meeting-stt/prototype-contracts':
+        specifier: workspace:*
+        version: link:../../packages/prototype-contracts
       '@testing-library/react':
         specifier: ^16.3.2
         version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@19.2.5(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)

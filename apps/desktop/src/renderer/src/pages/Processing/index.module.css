@@ -7,7 +7,7 @@
   overflow: auto;
 }
 .content {
-  width: 800px;
+  width: 1180px;
   max-width: 100%;
   margin: 0 auto;
 }
@@ -99,6 +99,118 @@
 .results span {
   font-size: 12px;
   color: #aaa092;
+}
+.comparison {
+  margin-top: 18px;
+}
+.comparing {
+  width: 1120px;
+}
+.comparisonGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: stretch;
+  min-width: 640px;
+}
+.summaryCandidate {
+  background: white;
+  border: 1px solid var(--color-divider);
+  border-radius: 8px;
+  padding: 22px;
+  min-width: 0;
+}
+.candidateHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #5f574b;
+  font-weight: 600;
+  margin-bottom: 18px;
+}
+.topicList {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.topicList section + section {
+  border-top: 1px solid #eee7dd;
+  padding-top: 18px;
+}
+.topicList h3 {
+  font-size: 18px;
+  margin: 0 0 14px;
+  color: #3f392f;
+}
+.topicList h4 {
+  font-size: 13px;
+  margin: 14px 0 6px;
+  color: #756b5f;
+}
+.topicList p,
+.topicList li,
+.emptyCandidate {
+  color: #62594d;
+  font-size: 14px;
+  line-height: 1.7;
+}
+.topicList ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.choicePanel {
+  margin-top: 16px;
+  background: white;
+  border: 1px solid var(--color-divider);
+  border-radius: 8px;
+  padding: 22px;
+}
+.choicePanel h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+.choicePanel fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0 0 18px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+}
+.choicePanel legend {
+  flex-basis: 100%;
+  margin-bottom: 4px;
+  color: #756b5f;
+  font-size: 13px;
+  font-weight: 600;
+}
+.choicePanel label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #62594d;
+  font-size: 14px;
+}
+.choicePanel textarea {
+  flex-basis: 100%;
+  min-height: 80px;
+  resize: vertical;
+  border: 1px solid #e6e0d6;
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #4a4238;
+}
+.choicePanel button {
+  background: #30281f;
+  color: white;
+  border: 0;
+  border-radius: 8px;
+  padding: 12px 18px;
+  cursor: pointer;
+}
+.choicePanel button:disabled {
+  cursor: default;
+  opacity: 0.45;
 }
 .transcript {
   width: 400px;

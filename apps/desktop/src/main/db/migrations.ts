@@ -150,7 +150,21 @@ const MIGRATIONS = [
     ON prototype_document_tree(owner_id, recording_id);
   `,
   // 5: 목록만 내려받은 문서도 오프라인에서 회의 길이를 표시한다.
-  `ALTER TABLE prototype_document_tree ADD COLUMN duration_sec REAL;`
+  `ALTER TABLE prototype_document_tree ADD COLUMN duration_sec REAL;`,
+  // 6: A/B 입력과 배치·선택을 재시작 후에도 유지한다.
+  `CREATE TABLE prototype_summary_comparisons (
+    owner_id TEXT NOT NULL,
+    recording_id TEXT NOT NULL,
+    transcript_artifact_id TEXT NOT NULL,
+    input_json TEXT NOT NULL,
+    first_variant TEXT NOT NULL CHECK(first_variant IN ('A','B')),
+    analysis_a_id TEXT,
+    analysis_b_id TEXT,
+    comparison_artifact_id TEXT,
+    selection_json TEXT,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY(owner_id, recording_id)
+  );`
 ]
 
 export const migrate = (db: Database) => {

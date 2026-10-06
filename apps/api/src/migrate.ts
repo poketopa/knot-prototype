@@ -100,6 +100,27 @@ export async function migrate(connectionString = loadConfig().migrationDatabaseU
         client.release()
       }
     }
+    const summaryPreferencesMigration = await db.query(
+      'SELECT 1 FROM schema_migrations WHERE version = $1',
+      ['006_summary_preferences']
+    )
+    if (summaryPreferencesMigration.rowCount === 0) {
+      const sql = await readFile(join(migrationsDir, '006_summary_preferences.sql'), 'utf8')
+      const client = await db.connect()
+      try {
+        await client.query('BEGIN')
+        await client.query(sql)
+        await client.query('INSERT INTO schema_migrations (version) VALUES ($1)', [
+          '006_summary_preferences'
+        ])
+        await client.query('COMMIT')
+      } catch (error) {
+        await client.query('ROLLBACK')
+        throw error
+      } finally {
+        client.release()
+      }
+    }
     await configureRuntimeRole(db)
   } finally {
     await db.end()

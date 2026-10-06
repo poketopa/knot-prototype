@@ -514,6 +514,206 @@ describePg('prototype API with real PostgreSQL and limited runtime role', () => 
     ).toBe(4)
   })
 
+  it('publishes only the selected A/B candidate and stores immutable summary preference', async () => {
+    const invalidRecording = '00000000-0000-4000-8000-000000005201'
+    const invalidTranscript = '00000000-0000-4000-8000-000000005202'
+    const validAnalysis = '00000000-0000-4000-8000-000000005203'
+    const invalidAnalysis = '00000000-0000-4000-8000-000000005204'
+    const invalidComparison = '00000000-0000-4000-8000-000000005205'
+    const validDocument = '00000000-0000-4000-8000-000000005206'
+    const invalidDocument = '00000000-0000-4000-8000-000000005207'
+    await putRecording(invalidRecording, '2026-10-11T00:30:00.000Z')
+    await putJsonArtifact(
+      invalidRecording,
+      invalidTranscript,
+      'transcript',
+      transcript(['invalid-ab-u1'])
+    )
+    await putJsonArtifact(invalidRecording, validAnalysis, 'ai_analysis', {
+      schemaVersion: 2,
+      topics: [v2Topic(validDocument, '제품', 'Valid A', ['invalid-ab-u1'])]
+    })
+    await putJsonArtifact(invalidRecording, invalidAnalysis, 'ai_analysis', {
+      schemaVersion: 2,
+      topics: [v2Topic(invalidDocument, '제품', 'Invalid B', ['missing-source'])]
+    })
+    await putJsonArtifact(invalidRecording, invalidComparison, 'ai_comparison', {
+      schemaVersion: 1,
+      transcriptArtifactId: invalidTranscript,
+      candidates: { A: validAnalysis, B: invalidAnalysis },
+      firstVariant: 'A'
+    })
+    const invalidUnselected = await publish(
+      invalidRecording,
+      validAnalysis,
+      token,
+      invalidTranscript,
+      false,
+      {
+        comparisonArtifactId: invalidComparison,
+        selectedVariant: 'A',
+        reason: 'accuracy',
+        meetingType: 'multi_agenda'
+      }
+    )
+    expect(invalidUnselected.statusCode).toBe(422)
+    expect(invalidUnselected.json()).toMatchObject({ code: 'AI_SOURCE_UTTERANCE_ID_UNKNOWN' })
+    expect(
+      await scalar(
+        'SELECT count(*)::int FROM recording_summary_preferences WHERE user_id = $1 AND recording_id = $2',
+        [userId, invalidRecording]
+      )
+    ).toBe(0)
+
+    const recording = '00000000-0000-4000-8000-000000005001'
+    const transcriptId = '00000000-0000-4000-8000-000000005002'
+    const analysisA = '00000000-0000-4000-8000-000000005003'
+    const analysisB = '00000000-0000-4000-8000-000000005004'
+    const comparison = '00000000-0000-4000-8000-000000005005'
+    const documentA = '00000000-0000-4000-8000-000000005006'
+    const documentB = '00000000-0000-4000-8000-000000005007'
+    await putRecording(recording, '2026-10-11T01:00:00.000Z')
+    await putJsonArtifact(recording, transcriptId, 'transcript', transcript(['ab-u1', 'ab-u2']))
+    await putJsonArtifact(recording, analysisA, 'ai_analysis', {
+      schemaVersion: 2,
+      topics: [v2Topic(documentA, '제품', 'A 정리', ['ab-u1'])]
+    })
+    await putJsonArtifact(recording, analysisB, 'ai_analysis', {
+      schemaVersion: 2,
+      topics: [v2Topic(documentB, '제품', 'B 정리', ['ab-u2'])]
+    })
+    await putJsonArtifact(recording, comparison, 'ai_comparison', {
+      schemaVersion: 1,
+      transcriptArtifactId: transcriptId,
+      candidates: { A: analysisA, B: analysisB },
+      firstVariant: 'B'
+    })
+
+    const bypass = await publish(recording, analysisA, token, transcriptId)
+    expect(bypass.statusCode).toBe(422)
+    expect(bypass.json()).toMatchObject({ code: 'SUMMARY_SELECTION_REQUIRED' })
+
+    const mismatched = await publish(recording, analysisA, token, transcriptId, false, {
+      comparisonArtifactId: comparison,
+      selectedVariant: 'B',
+      reason: 'accuracy',
+      meetingType: 'multi_agenda'
+    })
+    expect(mismatched.statusCode).toBe(422)
+    expect(mismatched.json()).toMatchObject({ code: 'SUMMARY_SELECTION_ANALYSIS_MISMATCH' })
+
+    const selection = {
+      comparisonArtifactId: comparison,
+      selectedVariant: 'A' as const,
+      reason: 'decisions_actions' as const,
+      meetingType: 'interview_feedback' as const
+    }
+    const published = await publish(recording, analysisA, token, transcriptId, false, selection)
+    expect(published.statusCode).toBe(200)
+    expect(published.json().documents).toEqual([
+      expect.objectContaining({ id: documentA, latestVersion: 1 })
+    ])
+    expect(
+      (await publish(recording, analysisA, token, transcriptId, false, selection)).json()
+    ).toEqual(published.json())
+
+    const changedSelection = await publish(recording, analysisA, token, transcriptId, false, {
+      ...selection,
+      reason: 'readability'
+    })
+    expect(changedSelection.statusCode).toBe(409)
+    expect(changedSelection.json()).toMatchObject({ code: 'SUMMARY_SELECTION_CONFLICT' })
+    expect(
+      await scalar(
+        'SELECT count(*)::int FROM document_tree_documents WHERE user_id = $1 AND id = $2',
+        [userId, documentB]
+      )
+    ).toBe(0)
+    const preference = await migratorDb.query<{
+      selected_analysis_artifact_id: string
+      rejected_analysis_artifact_id: string
+      candidate_a_analysis_artifact_id: string
+      candidate_b_analysis_artifact_id: string
+      first_variant: string
+      selected_variant: string
+      reason: string
+      meeting_type: string
+    }>(
+      `SELECT selected_analysis_artifact_id,
+              rejected_analysis_artifact_id,
+              candidate_a_analysis_artifact_id,
+              candidate_b_analysis_artifact_id,
+              first_variant,
+              selected_variant,
+              reason,
+              meeting_type
+       FROM recording_summary_preferences
+       WHERE user_id = $1 AND recording_id = $2`,
+      [userId, recording]
+    )
+    expect(preference.rows[0]).toEqual({
+      selected_analysis_artifact_id: analysisA,
+      rejected_analysis_artifact_id: analysisB,
+      candidate_a_analysis_artifact_id: analysisA,
+      candidate_b_analysis_artifact_id: analysisB,
+      first_variant: 'B',
+      selected_variant: 'A',
+      reason: 'decisions_actions',
+      meeting_type: 'interview_feedback'
+    })
+
+    const foreignRecording = '00000000-0000-4000-8000-000000005101'
+    const foreignTranscript = '00000000-0000-4000-8000-000000005102'
+    const foreignAnalysisA = '00000000-0000-4000-8000-000000005103'
+    const foreignAnalysisB = '00000000-0000-4000-8000-000000005104'
+    const foreignComparison = '00000000-0000-4000-8000-000000005105'
+    await putRecording(foreignRecording, '2026-10-11T02:00:00.000Z', token2)
+    await putJsonArtifact(
+      foreignRecording,
+      foreignTranscript,
+      'transcript',
+      transcript(['foreign-ab-u1']),
+      token2
+    )
+    await putJsonArtifact(
+      foreignRecording,
+      foreignAnalysisA,
+      'ai_analysis',
+      {
+        schemaVersion: 2,
+        topics: [v2Topic(foreignAnalysisA, '제품', 'Foreign A', ['foreign-ab-u1'])]
+      },
+      token2
+    )
+    await putJsonArtifact(
+      foreignRecording,
+      foreignAnalysisB,
+      'ai_analysis',
+      {
+        schemaVersion: 2,
+        topics: [v2Topic(foreignAnalysisB, '제품', 'Foreign B', ['foreign-ab-u1'])]
+      },
+      token2
+    )
+    await putJsonArtifact(
+      foreignRecording,
+      foreignComparison,
+      'ai_comparison',
+      {
+        schemaVersion: 1,
+        transcriptArtifactId: foreignTranscript,
+        candidates: { A: foreignAnalysisA, B: foreignAnalysisB },
+        firstVariant: 'A'
+      },
+      token2
+    )
+    const foreignSelection = await publish(recording, analysisA, token, transcriptId, false, {
+      ...selection,
+      comparisonArtifactId: foreignComparison
+    })
+    expect(foreignSelection.statusCode).toBe(404)
+  })
+
   it('publishes V2 topics as distinct tree documents with replay, rollback, and tenant isolation', async () => {
     const r1 = '00000000-0000-4000-8000-000000001101'
     const r2 = '00000000-0000-4000-8000-000000001102'
@@ -653,12 +853,41 @@ describePg('prototype API with real PostgreSQL and limited runtime role', () => 
       ]
     })
     const emptyShape = await publish(emptyShapeRecordingId, emptyShapeAnalysisId)
-    expect(emptyShape.statusCode).toBe(422)
-    expect(emptyShape.json()).toMatchObject({ code: 'AI_SUMMARY_SECTIONS_INVALID' })
+    expect(emptyShape.statusCode).toBe(200)
+    expect(emptyShape.json().documents).toEqual([
+      expect.objectContaining({ id: emptyShapeDocumentId, latestVersion: 1 })
+    ])
+
+    const emptyBodyRecordingId = '00000000-0000-4000-8000-000000001811'
+    const emptyBodyTranscriptId = '00000000-0000-4000-8000-000000001812'
+    const emptyBodyAnalysisId = '00000000-0000-4000-8000-000000001813'
+    const emptyBodyDocumentId = '00000000-0000-4000-8000-000000001814'
+    await putRecording(emptyBodyRecordingId, '2026-10-09T02:00:00.000Z')
+    await putJsonArtifact(
+      emptyBodyRecordingId,
+      emptyBodyTranscriptId,
+      'transcript',
+      transcript(['empty-body-u1'])
+    )
+    await putJsonArtifact(emptyBodyRecordingId, emptyBodyAnalysisId, 'ai_analysis', {
+      schemaVersion: 2,
+      topics: [
+        {
+          documentId: emptyBodyDocumentId,
+          domain: '제품',
+          title: 'Empty',
+          summarySections: [],
+          outline: []
+        }
+      ]
+    })
+    const emptyBody = await publish(emptyBodyRecordingId, emptyBodyAnalysisId)
+    expect(emptyBody.statusCode).toBe(422)
+    expect(emptyBody.json()).toMatchObject({ code: 'AI_TOPIC_BODY_EMPTY' })
     expect(
       await scalar(
         'SELECT count(*)::int FROM document_tree_documents WHERE user_id = $1 AND id = $2',
-        [userId, emptyShapeDocumentId]
+        [userId, emptyBodyDocumentId]
       )
     ).toBe(0)
 
@@ -1134,7 +1363,7 @@ describePg('prototype API with real PostgreSQL and limited runtime role', () => 
   async function putJsonArtifact(
     recordingId: string,
     artifactId: string,
-    kind: 'transcript' | 'ai_analysis' | 'meeting_summary',
+    kind: 'transcript' | 'ai_analysis' | 'meeting_summary' | 'ai_comparison',
     content: unknown,
     bearer = token
   ) {
@@ -1150,7 +1379,8 @@ describePg('prototype API with real PostgreSQL and limited runtime role', () => 
         byteLength: bytes.byteLength,
         provider: kind === 'ai_analysis' ? 'fixture' : undefined,
         model: kind === 'ai_analysis' ? 'fixture' : undefined,
-        promptVersion: kind === 'ai_analysis' ? 'v1' : undefined
+        promptVersion:
+          kind === 'ai_analysis' ? 'v1' : kind === 'ai_comparison' ? 'comparison-v1' : undefined
       }
     })
     expect(response.statusCode).toBe(200)
@@ -1161,7 +1391,14 @@ describePg('prototype API with real PostgreSQL and limited runtime role', () => 
     analysisArtifactId: string,
     bearer = token,
     transcriptArtifactId?: string,
-    replaceRecordingDocuments = false
+    replaceRecordingDocuments = false,
+    selection?: {
+      comparisonArtifactId: string
+      selectedVariant: 'A' | 'B'
+      reason: 'decisions_actions' | 'accuracy' | 'readability' | 'other'
+      meetingType: 'multi_agenda' | 'interview_feedback' | 'introduction_sharing'
+      otherReason?: string
+    }
   ) {
     return app.inject({
       method: 'POST',
@@ -1170,7 +1407,8 @@ describePg('prototype API with real PostgreSQL and limited runtime role', () => 
       payload: {
         analysisArtifactId,
         ...(transcriptArtifactId ? { transcriptArtifactId } : {}),
-        ...(replaceRecordingDocuments ? { replaceRecordingDocuments: true } : {})
+        ...(replaceRecordingDocuments ? { replaceRecordingDocuments: true } : {}),
+        ...(selection ? { selection } : {})
       }
     })
   }

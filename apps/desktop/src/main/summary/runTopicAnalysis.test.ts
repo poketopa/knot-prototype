@@ -6,6 +6,8 @@ import type { LlmClient } from '../llm/types'
 import {
   TOPIC_ANALYSIS_JSON_GRAMMAR,
   TOPIC_ANALYSIS_PROMPT_VERSION,
+  TOPIC_ANALYSIS_PROMPT_VERSION_BY_VARIANT,
+  TOPIC_ANALYSIS_SYSTEM_PROMPT_B,
   TOPIC_ANALYSIS_LOCAL_INPUT_CHARS,
   TOPIC_ANALYSIS_MAX_PREDICT_TOKENS
 } from '@shared/summary'
@@ -121,6 +123,30 @@ describe('runTopicAnalysis', () => {
     expect(saved.result).toEqual({ schemaVersion: 2, topics: [] })
   })
 
+  it('B variant 빈 전사도 V2 빈 결과를 남기고 provider를 준비하지 않는다', async () => {
+    const { runTopicAnalysis } = await loadRunTopicAnalysis()
+
+    const attempt = await runTopicAnalysis({
+      meetingId: 'meeting-empty-b',
+      variant: 'B',
+      utterances: [],
+      documents: [],
+      onProgress: vi.fn()
+    })
+
+    expect(createLlmClient).not.toHaveBeenCalled()
+    expect(attempt.promptVersion).toBe(TOPIC_ANALYSIS_PROMPT_VERSION_BY_VARIANT.B)
+    expect(attempt.result).toEqual({ schemaVersion: 2, topics: [] })
+    const [dir] = await attemptDirs('meeting-empty-b')
+    const saved = JSON.parse(
+      await readFile(
+        path.join(rootDir, 'ai-attempts', 'meeting-empty-b', dir.name, 'attempt.json'),
+        'utf8'
+      )
+    )
+    expect(saved.result).toEqual({ schemaVersion: 2, topics: [] })
+  })
+
   it('provider 실패도 failure spool을 남긴다', async () => {
     createLlmClient.mockResolvedValue({
       provider: 'local',
@@ -153,6 +179,42 @@ describe('runTopicAnalysis', () => {
       error: '모델 실패'
     })
     expect(failure.diagnostics).toBeUndefined()
+  })
+
+  it('B variant 실패도 B promptVersion으로 failure spool을 남긴다', async () => {
+    const complete = vi.fn<LlmClient['complete']>().mockRejectedValue(new Error('B 모델 실패'))
+    const { runTopicAnalysis } = await loadRunTopicAnalysis()
+
+    await expect(
+      runTopicAnalysis({
+        meetingId: 'meeting-b-fail',
+        variant: 'B',
+        client: {
+          provider: 'local',
+          model: 'test-model',
+          chunkBudgetChars: 3000,
+          complete
+        },
+        utterances: [{ id: 'u1', speakerLabel: '화자 1', text: 'A를 이야기했습니다.' }],
+        documents: [],
+        onProgress: vi.fn()
+      })
+    ).rejects.toThrow(/B 모델 실패/)
+
+    expect(createLlmClient).not.toHaveBeenCalled()
+    const [dir] = await attemptDirs('meeting-b-fail')
+    const failure = JSON.parse(
+      await readFile(
+        path.join(rootDir, 'ai-attempts', 'meeting-b-fail', dir.name, 'topic-whole.failure.json'),
+        'utf8'
+      )
+    )
+    expect(failure).toMatchObject({
+      provider: 'local',
+      model: 'test-model',
+      promptVersion: TOPIC_ANALYSIS_PROMPT_VERSION_BY_VARIANT.B,
+      error: 'B 모델 실패'
+    })
   })
 
   it('로컬 분석에 JSON 문법과 넉넉한 출력 예산을 전달하고 잘린 원본도 남긴다', async () => {
@@ -276,6 +338,67 @@ describe('runTopicAnalysis', () => {
       complete.mock.calls.filter(([params]) => params.label.startsWith('topic-reduce-')).length
     ).toBeGreaterThan(0)
     expect(attempt.rawResponses.length).toBe(complete.mock.calls.length)
+  })
+
+  it('B variant와 제공된 client를 긴 전사의 map/reduce 전체와 provenance에 유지한다', async () => {
+    const utterances = Array.from({ length: 6 }, (_, index) => ({
+      id: `u${index}`,
+      speakerLabel: '화자 1',
+      text: `주제 ${index}의 결정과 보류와 할 일을 논의합니다. `.repeat(70),
+      startSec: index * 60
+    }))
+    const complete = vi.fn<LlmClient['complete']>().mockImplementation(async (params) => {
+      expect(params.system).toBe(TOPIC_ANALYSIS_SYSTEM_PROMPT_B)
+      const sources = params.label.startsWith('topic-reduce-')
+        ? sourceIdsFromReducePrompt(params.prompt)
+        : sourceIdsFromPrompt(params.prompt)
+      return v2Topic({ sources })
+    })
+    const client: LlmClient = {
+      provider: 'local',
+      model: 'fixed-provider',
+      chunkBudgetChars: 5000,
+      complete
+    }
+    const { runTopicAnalysis } = await loadRunTopicAnalysis()
+
+    const attempt = await runTopicAnalysis({
+      meetingId: 'long-b',
+      variant: 'B',
+      client,
+      utterances,
+      documents: [],
+      onProgress: vi.fn()
+    })
+
+    expect(createLlmClient).not.toHaveBeenCalled()
+    expect(attempt.promptVersion).toBe(TOPIC_ANALYSIS_PROMPT_VERSION_BY_VARIANT.B)
+    expect(attempt.provider).toBe('local')
+    expect(attempt.model).toBe('fixed-provider')
+    expect(complete.mock.calls.some(([params]) => params.label.startsWith('topic-chunk-'))).toBe(
+      true
+    )
+    expect(complete.mock.calls.some(([params]) => params.label.startsWith('topic-reduce-'))).toBe(
+      true
+    )
+    expect(attempt.rawResponses.map((raw) => raw.label)).toEqual(
+      complete.mock.calls.map(([params]) => params.label)
+    )
+    const [dir] = await attemptDirs('long-b')
+    const attemptJson = JSON.parse(
+      await readFile(path.join(rootDir, 'ai-attempts', 'long-b', dir.name, 'attempt.json'), 'utf8')
+    )
+    expect(attemptJson.promptVersion).toBe(TOPIC_ANALYSIS_PROMPT_VERSION_BY_VARIANT.B)
+    for (const [params] of complete.mock.calls) {
+      const input = JSON.parse(
+        await readFile(
+          path.join(rootDir, 'ai-attempts', 'long-b', dir.name, `${params.label}.input.json`),
+          'utf8'
+        )
+      )
+      expect(input.promptVersion).toBe(TOPIC_ANALYSIS_PROMPT_VERSION_BY_VARIANT.B)
+      expect(input.system).toBe(TOPIC_ANALYSIS_SYSTEM_PROMPT_B)
+    }
   })
 
   it('합치기에서 근거나 세부사항이 사라지면 구간 결과와 원본을 보존하고 최종 분석을 확정하지 않는다', async () => {

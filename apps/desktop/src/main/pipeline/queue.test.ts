@@ -21,6 +21,18 @@ vi.mock('../prototype/authState', () => ({
 
 vi.mock('./run', () => ({ runPipeline: vi.fn() }))
 vi.mock('../summary/run', () => ({ runTopicAnalysis: vi.fn() }))
+vi.mock('../prototype/comparisons', () => ({
+  findPrototypeComparison: () => undefined,
+  generatePrototypeComparison: async ({ recordingId }: { recordingId: string }) => {
+    const { runTopicAnalysis } = await import('../summary/run')
+    return runTopicAnalysis({
+      meetingId: recordingId,
+      utterances: [],
+      documents: [],
+      onProgress: () => {}
+    })
+  }
+}))
 vi.mock('../summary/meetingSummary', () => ({ createMeetingSummary: vi.fn() }))
 vi.mock('../glossary/draft', () => ({ runGlossaryDraft: vi.fn() }))
 vi.mock('../prototype/documents', () => ({ listPrototypeDocuments: vi.fn(() => []) }))

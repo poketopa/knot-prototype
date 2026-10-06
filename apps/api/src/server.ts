@@ -1,7 +1,7 @@
 import type { IncomingMessage } from 'node:http'
 import { createHash, randomUUID } from 'node:crypto'
 
-import { validateAiAnalysis } from '@meeting-stt/prototype-contracts/validate'
+import { isUuid, validateAiAnalysis } from '@meeting-stt/prototype-contracts/validate'
 import {
   artifactPutRequestSchema,
   authAttemptRequestSchema,
@@ -13,12 +13,15 @@ import {
 import type {
   AiAnalysisV1,
   AiAnalysisV2,
+  AiComparison,
   ArtifactPutRequest,
   AuthAttemptRequest,
   AuthExchangeRequest,
   EventsBatchRequest,
   PublishRequest,
-  RecordingPutRequest
+  RecordingPutRequest,
+  SummarySelection,
+  SummaryVariant
 } from '@meeting-stt/prototype-contracts/types'
 import Fastify, { type FastifyInstance } from 'fastify'
 
@@ -521,7 +524,8 @@ export function buildServer({
         request.params.id,
         request.body.analysisArtifactId,
         request.body.transcriptArtifactId,
-        request.body.replaceRecordingDocuments === true
+        request.body.replaceRecordingDocuments === true,
+        request.body.selection
       )
     }
   )
@@ -931,23 +935,27 @@ async function publishRecording(
   recordingId: string,
   analysisArtifactId: string,
   transcriptArtifactId?: string,
-  replaceRecordingDocuments = false
+  replaceRecordingDocuments = false,
+  selection?: SummarySelection
 ) {
   return withTransaction(db, async (client) => {
     await lockUserDocumentTree(client, user.id)
-    const replay = await client.query<{ response: unknown }>(
-      'SELECT response FROM recording_publishes WHERE user_id = $1 AND recording_id = $2 AND analysis_artifact_id = $3',
-      [user.id, recordingId, analysisArtifactId]
-    )
-    if (replay.rowCount === 1) {
-      return replay.rows[0].response
-    }
     const recording = await client.query<RecordingRow>(
       'SELECT * FROM recordings WHERE user_id = $1 AND id = $2 FOR UPDATE',
       [user.id, recordingId]
     )
     if (recording.rowCount !== 1) {
       throw new ApiError(404, 'RECORDING_NOT_FOUND', 'Recording not found')
+    }
+    if (!selection) {
+      await assertNoComparisonBypass({ client, userId: user.id, recordingId, analysisArtifactId })
+      const replay = await client.query<{ response: unknown }>(
+        'SELECT response FROM recording_publishes WHERE user_id = $1 AND recording_id = $2 AND analysis_artifact_id = $3',
+        [user.id, recordingId, analysisArtifactId]
+      )
+      if (replay.rowCount === 1) {
+        return replay.rows[0].response
+      }
     }
     if (
       recording.rows[0].published_analysis_id &&
@@ -982,8 +990,29 @@ async function publishRecording(
         'Publish requires a completed transcript artifact'
       )
     }
-
     const utteranceIds = extractUtteranceIds(transcript.rows[0].raw_content)
+    if (selection) {
+      const preference = await prepareSummaryPreference({
+        client,
+        userId: user.id,
+        recordingId,
+        analysisArtifactId,
+        transcript: transcript.rows[0],
+        utteranceIds,
+        selection
+      })
+      if (preference) {
+        await recordSummaryPreference({ client, userId: user.id, recordingId, preference })
+      }
+      const replay = await client.query<{ response: unknown }>(
+        'SELECT response FROM recording_publishes WHERE user_id = $1 AND recording_id = $2 AND analysis_artifact_id = $3',
+        [user.id, recordingId, analysisArtifactId]
+      )
+      if (replay.rowCount === 1) {
+        return replay.rows[0].response
+      }
+    }
+
     const ai = validatePublishAiAnalysis(analysis.rows[0].raw_content)
     validateSourceRefs(ai, utteranceIds)
     if (ai.schemaVersion === 2) {
@@ -1113,6 +1142,314 @@ async function selectPublishTranscript(
      LIMIT 1`,
     [userId, recordingId, analysis.created_at]
   )
+}
+
+type PreparedSummaryPreference = {
+  comparisonArtifactId: string
+  selectedAnalysisArtifactId: string
+  rejectedAnalysisArtifactId: string
+  candidateAAnalysisArtifactId: string
+  candidateBAnalysisArtifactId: string
+  transcriptArtifactId: string
+  selectedVariant: SummaryVariant
+  firstVariant: SummaryVariant
+  reason: SummarySelection['reason']
+  meetingType: SummarySelection['meetingType']
+  otherReason: string | null
+  selection: SummarySelection
+}
+
+async function prepareSummaryPreference({
+  client,
+  userId,
+  recordingId,
+  analysisArtifactId,
+  transcript,
+  utteranceIds,
+  selection
+}: {
+  client: DbClient
+  userId: string
+  recordingId: string
+  analysisArtifactId: string
+  transcript: ArtifactRow
+  utteranceIds: Set<string>
+  selection?: SummarySelection
+}): Promise<PreparedSummaryPreference | null> {
+  if (!selection) {
+    await assertNoComparisonBypass({ client, userId, recordingId, analysisArtifactId })
+    return null
+  }
+
+  const comparison = await client.query<ArtifactRow>(
+    `SELECT *
+     FROM artifacts
+     WHERE user_id = $1
+       AND recording_id = $2
+       AND id = $3
+       AND kind = 'ai_comparison'
+       AND completed_at IS NOT NULL`,
+    [userId, recordingId, selection.comparisonArtifactId]
+  )
+  if (comparison.rowCount !== 1 || comparison.rows[0].raw_content === null) {
+    throw new ApiError(404, 'COMPARISON_ARTIFACT_NOT_FOUND', 'Comparison artifact not found')
+  }
+  const content = validateAiComparison(comparison.rows[0].raw_content)
+  if (content.transcriptArtifactId !== transcript.id) {
+    throw new ApiError(
+      422,
+      'COMPARISON_TRANSCRIPT_MISMATCH',
+      'Comparison transcript does not match publish transcript'
+    )
+  }
+  const selectedAnalysisArtifactId = content.candidates[selection.selectedVariant]
+  const rejectedVariant: SummaryVariant = selection.selectedVariant === 'A' ? 'B' : 'A'
+  const rejectedAnalysisArtifactId = content.candidates[rejectedVariant]
+  if (selectedAnalysisArtifactId !== analysisArtifactId) {
+    throw new ApiError(
+      422,
+      'SUMMARY_SELECTION_ANALYSIS_MISMATCH',
+      'Selected variant does not match analysis artifact'
+    )
+  }
+  if (selectedAnalysisArtifactId === rejectedAnalysisArtifactId) {
+    throw new ApiError(
+      422,
+      'COMPARISON_CANDIDATES_DUPLICATE',
+      'Comparison candidates must be distinct'
+    )
+  }
+  await assertComparisonCandidatesComplete({
+    client,
+    userId,
+    recordingId,
+    candidateAAnalysisArtifactId: content.candidates.A,
+    candidateBAnalysisArtifactId: content.candidates.B,
+    utteranceIds
+  })
+  const otherReason = selection.otherReason?.trim() || null
+  if (otherReason && otherReason.length > 500) {
+    throw new ApiError(400, 'OTHER_REASON_TOO_LONG', 'Other reason must be at most 500 characters')
+  }
+  return {
+    comparisonArtifactId: selection.comparisonArtifactId,
+    selectedAnalysisArtifactId,
+    rejectedAnalysisArtifactId,
+    candidateAAnalysisArtifactId: content.candidates.A,
+    candidateBAnalysisArtifactId: content.candidates.B,
+    transcriptArtifactId: content.transcriptArtifactId,
+    selectedVariant: selection.selectedVariant,
+    firstVariant: content.firstVariant,
+    reason: selection.reason,
+    meetingType: selection.meetingType,
+    otherReason,
+    selection: {
+      comparisonArtifactId: selection.comparisonArtifactId,
+      selectedVariant: selection.selectedVariant,
+      reason: selection.reason,
+      meetingType: selection.meetingType,
+      ...(otherReason ? { otherReason } : {})
+    }
+  }
+}
+
+async function assertNoComparisonBypass({
+  client,
+  userId,
+  recordingId,
+  analysisArtifactId
+}: {
+  client: DbClient
+  userId: string
+  recordingId: string
+  analysisArtifactId: string
+}) {
+  const comparisons = await client.query<{ raw_content: unknown }>(
+    `SELECT raw_content
+     FROM artifacts
+     WHERE user_id = $1
+       AND recording_id = $2
+       AND kind = 'ai_comparison'
+       AND completed_at IS NOT NULL
+       AND raw_content IS NOT NULL`,
+    [userId, recordingId]
+  )
+  for (const row of comparisons.rows) {
+    const comparison = validateAiComparison(row.raw_content)
+    if (
+      comparison.candidates.A === analysisArtifactId ||
+      comparison.candidates.B === analysisArtifactId
+    ) {
+      throw new ApiError(
+        422,
+        'SUMMARY_SELECTION_REQUIRED',
+        'Publish requires summary selection for compared analyses'
+      )
+    }
+  }
+}
+
+async function assertComparisonCandidatesComplete({
+  client,
+  userId,
+  recordingId,
+  candidateAAnalysisArtifactId,
+  candidateBAnalysisArtifactId,
+  utteranceIds
+}: {
+  client: DbClient
+  userId: string
+  recordingId: string
+  candidateAAnalysisArtifactId: string
+  candidateBAnalysisArtifactId: string
+  utteranceIds: Set<string>
+}) {
+  const candidates = await client.query<{ id: string; raw_content: unknown }>(
+    `SELECT id, raw_content
+     FROM artifacts
+     WHERE user_id = $1
+       AND recording_id = $2
+       AND kind = 'ai_analysis'
+       AND completed_at IS NOT NULL
+       AND raw_content IS NOT NULL
+       AND id = ANY($3::uuid[])`,
+    [userId, recordingId, [candidateAAnalysisArtifactId, candidateBAnalysisArtifactId]]
+  )
+  const ids = new Set(candidates.rows.map((row) => row.id))
+  if (!ids.has(candidateAAnalysisArtifactId) || !ids.has(candidateBAnalysisArtifactId)) {
+    throw new ApiError(
+      422,
+      'COMPARISON_CANDIDATE_NOT_FOUND',
+      'Comparison candidates must be completed analysis artifacts for the same recording'
+    )
+  }
+  for (const candidate of candidates.rows) {
+    const ai = validatePublishAiAnalysis(candidate.raw_content)
+    validateSourceRefs(ai, utteranceIds)
+  }
+}
+
+async function recordSummaryPreference({
+  client,
+  userId,
+  recordingId,
+  preference
+}: {
+  client: DbClient
+  userId: string
+  recordingId: string
+  preference: PreparedSummaryPreference
+}) {
+  const inserted = await client.query(
+    `INSERT INTO recording_summary_preferences (
+       user_id,
+       recording_id,
+       comparison_artifact_id,
+       selected_analysis_artifact_id,
+       rejected_analysis_artifact_id,
+       candidate_a_analysis_artifact_id,
+       candidate_b_analysis_artifact_id,
+       transcript_artifact_id,
+       selected_variant,
+       first_variant,
+       reason,
+       meeting_type,
+       other_reason,
+       selection
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+     ON CONFLICT (user_id, recording_id) DO NOTHING`,
+    [
+      userId,
+      recordingId,
+      preference.comparisonArtifactId,
+      preference.selectedAnalysisArtifactId,
+      preference.rejectedAnalysisArtifactId,
+      preference.candidateAAnalysisArtifactId,
+      preference.candidateBAnalysisArtifactId,
+      preference.transcriptArtifactId,
+      preference.selectedVariant,
+      preference.firstVariant,
+      preference.reason,
+      preference.meetingType,
+      preference.otherReason,
+      JSON.stringify(preference.selection)
+    ]
+  )
+  if (inserted.rowCount === 1) return
+
+  const existing = await client.query<{
+    comparison_artifact_id: string
+    selected_analysis_artifact_id: string
+    rejected_analysis_artifact_id: string
+    candidate_a_analysis_artifact_id: string
+    candidate_b_analysis_artifact_id: string
+    transcript_artifact_id: string
+    selected_variant: SummaryVariant
+    first_variant: SummaryVariant
+    reason: SummarySelection['reason']
+    meeting_type: SummarySelection['meetingType']
+    other_reason: string | null
+  }>(
+    `SELECT comparison_artifact_id,
+            selected_analysis_artifact_id,
+            rejected_analysis_artifact_id,
+            candidate_a_analysis_artifact_id,
+            candidate_b_analysis_artifact_id,
+            transcript_artifact_id,
+            selected_variant,
+            first_variant,
+            reason,
+            meeting_type,
+            other_reason
+     FROM recording_summary_preferences
+     WHERE user_id = $1 AND recording_id = $2`,
+    [userId, recordingId]
+  )
+  if (existing.rowCount === 1) {
+    const row = existing.rows[0]
+    if (
+      row.comparison_artifact_id === preference.comparisonArtifactId &&
+      row.selected_analysis_artifact_id === preference.selectedAnalysisArtifactId &&
+      row.rejected_analysis_artifact_id === preference.rejectedAnalysisArtifactId &&
+      row.candidate_a_analysis_artifact_id === preference.candidateAAnalysisArtifactId &&
+      row.candidate_b_analysis_artifact_id === preference.candidateBAnalysisArtifactId &&
+      row.transcript_artifact_id === preference.transcriptArtifactId &&
+      row.selected_variant === preference.selectedVariant &&
+      row.first_variant === preference.firstVariant &&
+      row.reason === preference.reason &&
+      row.meeting_type === preference.meetingType &&
+      row.other_reason === preference.otherReason
+    ) {
+      return
+    }
+    throw new ApiError(409, 'SUMMARY_SELECTION_CONFLICT', 'Recording summary selection differs')
+  }
+  throw new ApiError(409, 'SUMMARY_SELECTION_CONFLICT', 'Recording summary selection differs')
+}
+
+function validateAiComparison(value: unknown): AiComparison {
+  if (!isRecord(value) || value.schemaVersion !== 1 || !isRecord(value.candidates)) {
+    throw new ApiError(422, 'AI_COMPARISON_INVALID', 'AI comparison artifact is invalid')
+  }
+  const transcriptArtifactId = value.transcriptArtifactId
+  const candidateA = value.candidates.A
+  const candidateB = value.candidates.B
+  const firstVariant = value.firstVariant
+  if (
+    !isUuid(transcriptArtifactId) ||
+    !isUuid(candidateA) ||
+    !isUuid(candidateB) ||
+    (firstVariant !== 'A' && firstVariant !== 'B')
+  ) {
+    throw new ApiError(422, 'AI_COMPARISON_INVALID', 'AI comparison artifact is invalid')
+  }
+  return {
+    schemaVersion: 1,
+    transcriptArtifactId,
+    candidates: { A: candidateA, B: candidateB },
+    firstVariant
+  }
 }
 
 async function publishRecordingV2({
