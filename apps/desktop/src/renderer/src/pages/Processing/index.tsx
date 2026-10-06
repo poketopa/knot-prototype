@@ -23,6 +23,7 @@ import {
 } from '@renderer/shared/api/prototype'
 import TranscriptPanel from '@renderer/modules/widgets/prototype/TranscriptPanel'
 import { documentDetailPath, PATHS } from '@renderer/shared/routes/paths'
+import { NEW_RECORDING_PATH } from '@renderer/shared/routes/recordReturn'
 import styles from './index.module.css'
 
 type ProcessingItemV2 = PrototypeProcessingItem & {
@@ -186,12 +187,12 @@ export function ProcessingContent({
       onNewRecording()
       return
     }
-    window.location.hash = PATHS.record
+    window.location.hash = NEW_RECORDING_PATH
   }
   return (
     <div className={styles.page}>
       <div className={`${styles.content} ${job?.stage === 'choosing' ? styles.comparing : ''}`}>
-        <Link className={styles.back} to={PATHS.record}>
+        <Link className={styles.back} to={NEW_RECORDING_PATH}>
           ‹ 녹음
         </Link>
         <section className={styles.card}>

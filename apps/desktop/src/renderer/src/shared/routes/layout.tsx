@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, matchPath, useLocation, useNavigate } from 'reac
 import UpdateBanner from '@renderer/modules/features/update/UpdateBanner'
 import DocumentWorkspace from '@renderer/pages/Documents/Workspace'
 import { onRecordingState } from '@renderer/shared/api/events'
+import useRecordingState from '@renderer/shared/hooks/domain/recording/useRecordingState'
 import {
   getAuthStateApi,
   logoutApi,
@@ -11,6 +12,7 @@ import {
 } from '@renderer/shared/api/prototype'
 import type { PrototypeAuthState } from '@shared/prototype'
 import { PATHS, processingPath } from './paths'
+import { useRecordReturnPath } from './useRecordReturnPath'
 import styles from './layout.module.css'
 
 export function MainWindowLayout() {
@@ -27,6 +29,8 @@ export function MainWindowLayout() {
 
 export function AppShellLayout() {
   const { pathname } = useLocation()
+  const { isRecording } = useRecordingState()
+  const recordReturnPath = useRecordReturnPath(isRecording)
   const isDocument = pathname === PATHS.home || !!matchPath(PATHS.documentDetail, pathname)
   const isRecord =
     pathname === PATHS.record ||
@@ -87,7 +91,7 @@ export function AppShellLayout() {
           <Link to={PATHS.home} aria-current={isDocument ? 'page' : undefined}>
             문서
           </Link>
-          <Link to={PATHS.record} aria-current={isRecord ? 'page' : undefined}>
+          <Link to={recordReturnPath ?? PATHS.record} aria-current={isRecord ? 'page' : undefined}>
             녹음
           </Link>
           <NavLink to={PATHS.settings}>설정</NavLink>

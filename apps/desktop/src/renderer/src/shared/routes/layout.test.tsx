@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 import Documents from '@renderer/pages/Documents'
@@ -10,6 +10,8 @@ import { AppShellLayout } from './layout'
 const api = vi.hoisted(() => ({
   getDocumentsApi: vi.fn(),
   getDocumentApi: vi.fn(),
+  getProcessingApi: vi.fn(),
+  getRecordingStateApi: vi.fn(),
   trackApi: vi.fn().mockResolvedValue(undefined)
 }))
 
@@ -28,11 +30,15 @@ vi.mock('@renderer/shared/api/prototype', () => ({
   }),
   getDocumentsApi: api.getDocumentsApi,
   getDocumentApi: api.getDocumentApi,
+  getProcessingApi: api.getProcessingApi,
   getTranscriptApi: vi.fn(),
   trackApi: api.trackApi,
   logoutApi: vi.fn(),
   loginApi: vi.fn(),
   onPrototypeChanged: () => () => {}
+}))
+vi.mock('@renderer/shared/api/recording', () => ({
+  getRecordingStateApi: api.getRecordingStateApi
 }))
 
 function LocationProbe() {
@@ -93,6 +99,11 @@ const renderShell = (path: string, withAppRoutes = false) =>
   )
 
 describe('AppShellLayout navigation', () => {
+  beforeEach(() => {
+    api.getProcessingApi.mockResolvedValue([])
+    api.getRecordingStateApi.mockResolvedValue({ meetingId: null, startedAt: null, level: 0 })
+  })
+
   it.each([
     ['/documents/doc-1', '문서'],
     ['/processing/meeting-1', '녹음'],
@@ -110,6 +121,47 @@ describe('AppShellLayout navigation', () => {
     api.getDocumentsApi.mockResolvedValue([])
     renderShell('/')
     expect(screen.getByRole('navigation', { name: '주 메뉴' }).textContent).toBe('문서녹음설정')
+  })
+
+  it('returns the Record tab to a processing summary that is waiting for selection', async () => {
+    api.getProcessingApi.mockResolvedValue([
+      {
+        meetingId: 'meeting-1',
+        title: '제품 회의',
+        status: 'pending',
+        stage: 'choosing',
+        completedStages: ['recording', 'transcribing', 'summarizing'],
+        startedAt: '2026-10-06T06:00:00Z'
+      }
+    ])
+    renderShell('/settings')
+
+    const recordLink = screen.getByRole('link', { name: '녹음' })
+    await waitFor(() => expect(recordLink.getAttribute('href')).toBe('/processing/meeting-1'))
+    await userEvent.click(recordLink)
+
+    expect(screen.getByLabelText('현재 경로').textContent).toBe('/processing/meeting-1')
+  })
+
+  it('keeps the Record tab on the live recorder while recording is active', async () => {
+    api.getRecordingStateApi.mockResolvedValue({
+      meetingId: 'live-meeting',
+      startedAt: Date.now(),
+      level: 0
+    })
+    api.getProcessingApi.mockResolvedValue([
+      {
+        meetingId: 'meeting-1',
+        title: '제품 회의',
+        status: 'pending',
+        stage: 'choosing'
+      }
+    ])
+    renderShell('/settings')
+
+    await waitFor(() =>
+      expect(screen.getByRole('link', { name: '녹음' }).getAttribute('href')).toBe('/record')
+    )
   })
 
   it('toggles the document sidebar without navigating away from the current route', async () => {

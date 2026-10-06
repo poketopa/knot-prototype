@@ -207,6 +207,23 @@ describe('processing status', () => {
     expect(screen.getByRole('button', { name: '새 녹음' })).toBeTruthy()
   })
 
+  it('marks back and new recording actions as explicit recorder entries', async () => {
+    renderProcessing({
+      meetingId: 'meeting-1',
+      title: '회의',
+      status: 'running',
+      stage: 'publishing',
+      completedStages: ['recording', 'transcribing', 'summarizing'],
+      hasTranscript: true
+    })
+
+    expect((await screen.findByRole('link', { name: '‹ 녹음' })).getAttribute('href')).toBe(
+      '/record?new=1'
+    )
+    await userEvent.click(screen.getByRole('button', { name: '새 녹음' }))
+    expect(window.location.hash).toBe('#/record?new=1')
+  })
+
   it('shows blinded A/B topic bundles in the stored random order', async () => {
     renderChoosing()
 
